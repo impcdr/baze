@@ -18,7 +18,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path("/home/agent/backend/.mongo")
+ROOT = Path(__file__).resolve().parents[1] / ".mongo"
 ROOTFS = Path("/home/agent/.cache/mongodb-container/rootfs")
 BUNDLE = ROOT / "bundle"
 STATE = ROOT / "crun"
@@ -29,7 +29,7 @@ MARKER = ROOT / "initialized"
 CRUN = Path("/home/agent/.local/bin/crun")
 CRANE = Path("/home/agent/.local/bin/crane")
 ENV_PATH = Path("/home/agent/.env")
-CONTAINER = "kiln-mongodb"
+CONTAINER = "baze-mongodb"
 IMAGE = "mongo:7.0@sha256:e634fcaae4d0915b365fb88c076dd33c851ed61a611c7ee9816aba6d6b5159cd"
 PORT = 27017
 

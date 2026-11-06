@@ -1,4 +1,4 @@
 #!/bin/sh
 set -eu
-cd /home/agent/backend
-exec .venv/bin/python -m kiln_api
+cd "$(dirname "$0")/.."
+exec .venv/bin/python -m baze_api

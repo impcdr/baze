@@ -6,7 +6,7 @@ import secrets
 
 import falcon
 
-from kiln_api.settings import Settings
+from baze_api.settings import Settings
 
 PUBLIC_PATHS = {"/api/health", "/api"}
 

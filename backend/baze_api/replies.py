@@ -1,4 +1,4 @@
-"""Same local replies the Kiln chat uses, persisted by the API."""
+"""Local replies persisted by the API."""
 
 
 def reply_for(prompt: str) -> str:

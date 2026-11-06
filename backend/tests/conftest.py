@@ -1,13 +1,13 @@
 import os
 
-os.environ["MONGODB_DB"] = "kiln_test"
+os.environ["MONGODB_DB"] = "baze_test"
 os.environ["API_TOKEN"] = "test-token-test-token"
 
 import pytest
 
-from kiln_api.app import create_app
-from kiln_api.db import conversations
-from kiln_api.settings import load_settings
+from baze_api.app import create_app
+from baze_api.db import conversations
+from baze_api.settings import load_settings
 
 
 @pytest.fixture()

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import falcon
 
-from kiln_api.middleware import AuthMiddleware, CorsMiddleware
-from kiln_api.resources import Conversation, Conversations, Health, Messages, ServiceInfo
-from kiln_api.settings import Settings, load_settings
-from kiln_api.static import StaticFiles
+from baze_api.middleware import AuthMiddleware, CorsMiddleware
+from baze_api.resources import Conversation, Conversations, Health, Messages, ServiceInfo
+from baze_api.settings import Settings, load_settings
+from baze_api.static import StaticFiles
 
 
 def create_app(settings: Settings | None = None) -> falcon.App:

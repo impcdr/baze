@@ -8,8 +8,8 @@ import falcon
 from pymongo import ReturnDocument
 from pymongo.errors import PyMongoError
 
-from kiln_api.db import conversations, get_client
-from kiln_api.http import (
+from baze_api.db import conversations, get_client
+from baze_api.http import (
     clean_content,
     clean_title,
     new_id,
@@ -19,8 +19,8 @@ from kiln_api.http import (
     public_message,
     read_json,
 )
-from kiln_api.replies import reply_for, title_from
-from kiln_api.settings import Settings
+from baze_api.replies import reply_for, title_from
+from baze_api.settings import Settings
 
 
 def _guard(fn):
@@ -57,7 +57,7 @@ class Health:
 class ServiceInfo:
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
         resp.media = {
-            "name": "kiln",
+            "name": "baze",
             "auth": "Authorization: Bearer <API_TOKEN from /home/agent/.env>",
             "frontend": "/",
             "chat": "/chat",

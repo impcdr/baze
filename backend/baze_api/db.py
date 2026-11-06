@@ -6,7 +6,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
 
-from kiln_api.settings import Settings
+from baze_api.settings import Settings
 
 _client: MongoClient | None = None
 _db_name: str | None = None

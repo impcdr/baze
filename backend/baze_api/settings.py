@@ -40,7 +40,7 @@ def load_settings() -> Settings:
         mongo_port=int(os.environ.get("MONGODB_PORT", "27017")),
         mongo_username=username,
         mongo_password=password,
-        mongo_db=os.environ.get("MONGODB_DB", "kiln"),
+        mongo_db=os.environ.get("MONGODB_DB", "baze"),
         mongo_auth_source=os.environ.get("MONGODB_AUTH_SOURCE", "admin"),
         api_host=os.environ.get("API_HOST", "0.0.0.0"),
         api_port=int(os.environ.get("API_PORT", "8000")),
