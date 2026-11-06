@@ -1,0 +1,7 @@
+{
+  "componentsPath": "../ui-lib",
+  "importAlias": "@spartan-ng/helm",
+  "style": "vega",
+  "generateAs": "entrypoint",
+  "buildable": false
+}

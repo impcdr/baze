@@ -1,0 +1,569 @@
+<div hlmTabs tab="shelf" class="bg-background/90 sticky top-0 z-20 border-b backdrop-blur" data-testid="section-nav">
+  <header class="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-6 py-3">
+    <a routerLink="/" class="min-w-0" aria-label="baze home">
+      <bz-logo [wordSize]="26" />
+    </a>
+    <div hlmTabsList class="bz-nav">
+      <button hlmTabsTrigger hlmTabsTrigger="shelf" type="button">Home</button>
+      <button hlmTabsTrigger hlmTabsTrigger="apps" type="button">My apps</button>
+      <button hlmTabsTrigger hlmTabsTrigger="shared" type="button">Shared with me</button>
+    </div>
+    <div class="ms-auto flex items-center gap-2">
+      <a href="#spartan" hlmBtn variant="ghost" size="sm">Spartan</a>
+      <a href="http://127.0.0.1:4200/chat" hlmBtn variant="ghost" size="sm">Chat</a>
+      <button hlmBtn type="button" variant="outline" size="icon" (click)="theme.toggle()" [attr.aria-label]="theme.mode() === 'dark' ? 'Use light theme' : 'Use dark theme'">
+        <ng-icon [name]="theme.mode() === 'dark' ? 'lucideSun' : 'lucideMoon'" />
+      </button>
+      <button hlmBtn type="button" variant="ghost" size="icon" class="rounded-full" [hlmDropdownMenuTrigger]="accountMenu" hlmTooltip="Ada Holm" aria-label="Ada Holm">
+        <span hlmAvatar size="sm">
+          <span hlmAvatarFallback [style.background]="you.color" [style.color]="you.ink">{{ you.initials }}</span>
+          <span hlmAvatarBadge style="background: var(--success)"></span>
+        </span>
+      </button>
+    </div>
+  </header>
+  <div hlmTabsContent hlmTabsContent="shelf" class="sr-only">Home</div>
+  <div hlmTabsContent hlmTabsContent="apps" class="sr-only">My apps</div>
+  <div hlmTabsContent hlmTabsContent="shared" class="sr-only">Shared with me</div>
+</div>
+
+<main id="top" data-testid="showcase" class="mx-auto flex max-w-5xl flex-col gap-16 px-6 py-12">
+  <section class="flex flex-col gap-3">
+    <h1 class="font-display text-4xl tracking-tight">What should we make today?</h1>
+    <p class="text-muted-foreground max-w-xl text-base">
+      Baze is the shelf. Apps sit on it, each with one job and one primary action. This page is every piece from the spec.
+    </p>
+  </section>
+
+  <section id="logo" class="flex flex-col gap-4" data-testid="section-logo">
+    <h2 class="font-display text-2xl">Logo</h2>
+    <p class="text-muted-foreground text-sm">One shelf, every size. The app icon is that same mark on a blue square. On a dark ground the shelf turns light.</p>
+    <div class="flex flex-wrap items-end gap-10">
+      <bz-logo />
+      <bz-logo [wordSize]="62" />
+      <bz-logo-reveal />
+      <bz-app-icon [size]="88" />
+      <div class="flex items-end rounded-3xl bg-[#0b1b3f] px-6 py-5">
+        <bz-logo tone="on-dark" [wordSize]="34" />
+      </div>
+    </div>
+  </section>
+
+  <section id="button" class="flex flex-col gap-4" data-testid="section-button">
+    <h2 class="font-display text-2xl">Button</h2>
+    <p class="text-muted-foreground text-sm">Put it live is the primary action. Mint is a status colour, never a button.</p>
+    <div class="flex flex-wrap items-center gap-3">
+      <button hlmBtn type="button" size="lg">Put it live</button>
+      <button hlmBtn type="button" size="lg" variant="outline">Open your app</button>
+      <button hlmBtn type="button" variant="secondary">Save a draft</button>
+      <button hlmBtn type="button" variant="ghost">Cancel</button>
+    </div>
+  </section>
+
+  <section id="status" class="flex flex-col gap-4" data-testid="section-status">
+    <h2 class="font-display text-2xl">Status chip</h2>
+    <div class="flex flex-wrap items-center gap-2">
+      <span hlmBadge variant="success"><span class="bz-live"></span> Live</span>
+      <span hlmBadge variant="secondary"><span class="bz-dot bz-dot--muted"></span> Being made</span>
+      <span hlmBadge variant="warning"><span class="bz-dot bz-dot--warning"></span> Take a look</span>
+      <span hlmBadge variant="destructive"><span class="bz-dot bz-dot--destructive"></span> Not working</span>
+      <span hlmBadge variant="secondary"><span class="bz-dot bz-dot--muted"></span> Paused</span>
+      <span hlmBadge>New</span>
+    </div>
+  </section>
+
+  <section id="choice" class="flex flex-col gap-6" data-testid="section-choice">
+    <div class="flex flex-col gap-3">
+      <h2 class="font-display text-2xl">Choice chips</h2>
+      <div hlmToggleGroup class="bz-chips" type="single" [nullable]="false" [value]="choice()" (valueChange)="setChoice($event)">
+        <button hlmToggleGroupItem type="button" value="website">A website</button>
+        <button hlmToggleGroupItem type="button" value="runs">Something that runs</button>
+        <button hlmToggleGroupItem type="button" value="unsure">Not sure yet</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="prompt" class="flex flex-col gap-4" data-testid="section-prompt">
+    <h2 class="font-display text-2xl">Prompt field</h2>
+    <div hlmInputGroup class="bz-prompt">
+      <textarea hlmInputGroupTextarea rows="3" placeholder="Invoices for my design studio…" aria-label="What should we make today?" [value]="prompt()" (input)="usePrompt($any($event.target).value)"></textarea>
+      <div hlmInputGroupAddon align="block-end">
+        <kbd hlmKbd class="me-auto" hlmTooltip="Make it">Enter</kbd>
+        <button hlmInputGroupButton type="button" variant="default" size="sm" class="ms-auto">Make it</button>
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2">
+      <button hlmBtn type="button" variant="outline" size="sm" (click)="usePrompt('Invoices for my design studio')">Invoices for my design studio</button>
+      <button hlmBtn type="button" variant="outline" size="sm" (click)="usePrompt('A stock watchlist with price alerts')">A stock watchlist with price alerts</button>
+    </div>
+  </section>
+
+  <section id="chat" class="flex flex-col gap-4" data-testid="section-chat">
+    <h2 class="font-display text-2xl">Chat</h2>
+    <div class="border-border relative h-96 overflow-hidden rounded-xl border bg-card">
+      <div hlmMessageScrollerProvider [autoScroll]="false">
+        <div hlmMessageScroller class="absolute inset-0">
+          <div hlmMessageScrollerViewport aria-label="Sample conversation">
+            <div hlmMessageScrollerContent class="flex flex-col gap-4 px-4 py-4">
+              <div hlmMessageScrollerItem messageId="ask" [scrollAnchor]="true">
+                <div hlmMessage align="end">
+                  <div hlmMessageContent>
+                    <div hlmBubble variant="default" align="end">
+                      <div hlmBubbleContent>A page that sends invoices for Harbour Co.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div hlmMessageScrollerItem messageId="think">
+                <div hlmMessage align="start">
+                  <div hlmMessageContent>
+                    <p class="text-sm"><span class="shimmer">Thinking…</span></p>
+                  </div>
+                </div>
+              </div>
+              <div hlmMessageScrollerItem messageId="look">
+                <div hlmMessage align="start">
+                  <div hlmMessageContent>
+                    <div hlmBubble variant="secondary" align="start">
+                      <div hlmBubbleContent class="flex flex-col gap-3">
+                        <p>Which look should it have?</p>
+                        <div hlmToggleGroup class="bz-chips" type="single" [nullable]="false" [value]="preset()" (valueChange)="setPreset($event)" data-testid="theme-presets">
+                          @for (look of presets; track look.id) {
+                            <button hlmToggleGroupItem type="button" [value]="look.id">
+                              <span class="bz-dot" [style.background]="look.color"></span>
+                              {{ look.label }}
+                            </button>
+                          }
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <button hlmMessageScrollerButton type="button"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screenshot" class="flex flex-col gap-4" data-testid="section-screenshot">
+    <h2 class="font-display text-2xl">Screenshot in chat</h2>
+    <p class="text-muted-foreground text-sm">Baze never renders an app. A screenshot opens full size. The app itself opens in its own tab.</p>
+    <div hlmMessage align="start">
+      <div hlmMessageContent class="max-w-xl">
+        <div hlmBubble variant="secondary" align="start">
+          <div hlmBubbleContent class="flex flex-col gap-3">
+            <p>Here is the first look.</p>
+            <div class="flex flex-wrap gap-3">
+              @for (picture of shots; track picture.id) {
+                <button
+                  hlmAttachment
+                  type="button"
+                  class="w-44"
+                  [hlmDialogTriggerFor]="shotDialog"
+                  (click)="chooseShot(picture)"
+                >
+                  <img hlmAttachmentMedia variant="image" [src]="picture.src" [alt]="picture.title" class="aspect-video w-full object-cover" />
+                  <span hlmAttachmentContent>
+                    <span hlmAttachmentTitle>{{ picture.title }}</span>
+                  </span>
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="cards" class="flex flex-col gap-4" data-testid="section-cards">
+    <h2 class="font-display text-2xl">Your apps</h2>
+    <div class="bz-arrive grid gap-4 sm:grid-cols-2">
+      <div hlmCard>
+        <div hlmCardContent class="pt-6">
+          <div hlmItem>
+            <div hlmItemMedia><bz-app-tile [color]="presetColor()" icon="lucideReceipt" [size]="40" label="Harbour invoices" /></div>
+            <div hlmItemContent>
+              <h3 hlmItemTitle>Harbour invoices</h3>
+              <p hlmItemDescription>Send invoices and see what is paid.</p>
+              <div hlmAvatarGroup class="mt-2">
+                <span hlmAvatar size="sm" [hlmTooltip]="you.name">
+                  <span hlmAvatarFallback [style.background]="you.color" [style.color]="you.ink">{{ you.initials }}</span>
+                </span>
+                @for (person of people; track person.initials) {
+                  <span hlmAvatar size="sm" [hlmTooltip]="person.name">
+                    <span hlmAvatarFallback [style.background]="person.color" [style.color]="person.ink">{{ person.initials }}</span>
+                  </span>
+                }
+                <span hlmAvatarGroupCount hlmTooltip="3 more">+3</span>
+              </div>
+            </div>
+            <span hlmBadge variant="success"><span class="bz-live"></span> Live</span>
+          </div>
+        </div>
+      </div>
+      <div hlmCard>
+        <div hlmCardContent class="pt-6">
+          <div hlmItem>
+            <div hlmItemMedia><bz-app-tile color="#c2410c" icon="lucideCalendarDays" [size]="40" label="Shift board" /></div>
+            <div hlmItemContent>
+              <h3 hlmItemTitle>Shift board</h3>
+              <p hlmItemDescription>Who is on, and who is next.</p>
+            </div>
+            <span hlmBadge variant="secondary">Draft</span>
+          </div>
+        </div>
+      </div>
+      <div hlmCard class="border-dashed">
+        <div hlmEmpty class="py-8">
+          <div hlmEmptyHeader>
+            <div hlmEmptyMedia><ng-icon name="lucidePlus" /></div>
+            <h3 hlmEmptyTitle>New app</h3>
+            <p hlmEmptyDescription>Tell baze what to make.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="people" class="flex flex-col gap-4" data-testid="section-people">
+    <h2 class="font-display text-2xl">People</h2>
+    <p class="text-muted-foreground text-sm">One person, then the people an app is shared with.</p>
+    <div hlmCard>
+      <div hlmCardContent class="flex flex-col gap-4 pt-6">
+        <div hlmItem>
+          <div hlmItemMedia>
+            <span hlmAvatar size="lg" [hlmTooltip]="you.name">
+              <span hlmAvatarFallback [style.background]="you.color" [style.color]="you.ink">{{ you.initials }}</span>
+              <span hlmAvatarBadge style="background: var(--success)"></span>
+            </span>
+          </div>
+          <div hlmItemContent>
+            <h3 hlmItemTitle>{{ you.name }}</h3>
+            <p hlmItemDescription>{{ you.role }}</p>
+          </div>
+          <span hlmBadge variant="success"><span class="bz-live"></span> Here</span>
+        </div>
+        <div hlmSeparator></div>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div hlmAvatarGroup>
+            <span hlmAvatar [hlmTooltip]="you.name">
+              <span hlmAvatarFallback [style.background]="you.color" [style.color]="you.ink">{{ you.initials }}</span>
+            </span>
+            @for (person of people; track person.initials) {
+              <span hlmAvatar [hlmTooltip]="person.name">
+                <span hlmAvatarFallback [style.background]="person.color" [style.color]="person.ink">{{ person.initials }}</span>
+              </span>
+            }
+            <span hlmAvatarGroupCount hlmTooltip="3 more">+3</span>
+          </div>
+          <hlm-sheet side="right">
+            <button hlmBtn hlmSheetTrigger type="button" variant="outline">Everyone</button>
+            <hlm-sheet-content *hlmSheetPortal="let ctx" class="sm:max-w-md">
+              <div hlmSheetHeader>
+                <h3 hlmSheetTitle>People on Harbour invoices</h3>
+                <p hlmSheetDescription>Who can open this app.</p>
+              </div>
+              <div class="flex flex-col gap-2">
+                <div hlmItem>
+                  <div hlmItemMedia>
+                    <span hlmAvatar>
+                      <span hlmAvatarFallback [style.background]="you.color" [style.color]="you.ink">{{ you.initials }}</span>
+                    </span>
+                  </div>
+                  <div hlmItemContent>
+                    <h3 hlmItemTitle>{{ you.name }}</h3>
+                    <p hlmItemDescription>{{ you.role }}</p>
+                  </div>
+                </div>
+                @for (person of people; track person.initials) {
+                  <div hlmItem>
+                    <div hlmItemMedia>
+                      <span hlmAvatar>
+                        <span hlmAvatarFallback [style.background]="person.color" [style.color]="person.ink">{{ person.initials }}</span>
+                      </span>
+                    </div>
+                    <div hlmItemContent>
+                      <h3 hlmItemTitle>{{ person.name }}</h3>
+                      <p hlmItemDescription>{{ person.role }}</p>
+                    </div>
+                  </div>
+                }
+              </div>
+            </hlm-sheet-content>
+          </hlm-sheet>
+        </div>
+      </div>
+    </div>
+
+    <div hlmSidebarWrapper class="border-border h-80 min-h-0! overflow-hidden rounded-xl border" sidebarWidth="15rem">
+      <hlm-sidebar collapsible="none">
+        <div hlmSidebarHeader class="px-3 py-3">
+          <bz-logo [wordSize]="20" />
+        </div>
+        <div hlmSidebarSeparator></div>
+        <div hlmSidebarContent>
+          <div hlmSidebarGroup>
+            <div hlmSidebarGroupLabel>People</div>
+            <div hlmSidebarGroupContent>
+              <ul hlmSidebarMenu>
+                <li hlmSidebarMenuItem>
+                  <button hlmSidebarMenuButton type="button">
+                    <span hlmAvatar size="sm">
+                      <span hlmAvatarFallback [style.background]="you.color" [style.color]="you.ink">{{ you.initials }}</span>
+                    </span>
+                    <span>{{ you.name }}</span>
+                    <span hlmSidebarMenuBadge>You</span>
+                  </button>
+                </li>
+                @for (person of people; track person.initials) {
+                  <li hlmSidebarMenuItem>
+                    <button hlmSidebarMenuButton type="button">
+                      <span hlmAvatar size="sm">
+                        <span hlmAvatarFallback [style.background]="person.color" [style.color]="person.ink">{{ person.initials }}</span>
+                      </span>
+                      <span>{{ person.name }}</span>
+                    </button>
+                  </li>
+                }
+              </ul>
+            </div>
+          </div>
+        </div>
+        <div hlmSidebarFooter class="p-3">
+          <p class="text-muted-foreground text-xs">4 people on this shelf</p>
+        </div>
+      </hlm-sidebar>
+      <main hlmSidebarInset class="flex flex-col justify-center gap-2 p-6">
+        <h3 class="font-display text-xl">Ada’s shelf</h3>
+        <p class="text-muted-foreground text-sm">The same people, in a sidebar beside the work.</p>
+      </main>
+    </div>
+  </section>
+
+  <section id="safety" class="flex flex-col gap-4" data-testid="section-safety">
+    <h2 class="font-display text-2xl">Safety checks</h2>
+    <div hlmCard>
+      <div hlmCardContent class="flex flex-col gap-2 pt-6">
+        <div hlmItem variant="muted">
+          <div hlmItemMedia variant="icon"><ng-icon name="lucideShieldCheck" /></div>
+          <div hlmItemContent>
+            <h3 hlmItemTitle>It stays on your shelf</h3>
+            <p hlmItemDescription>Nothing is shared until you say so.</p>
+          </div>
+          <bz-check-draw />
+        </div>
+        <div hlmItem variant="muted">
+          <div hlmItemMedia variant="icon"><ng-icon name="lucideShieldCheck" /></div>
+          <div hlmItemContent>
+            <h3 hlmItemTitle>Unknown sites are stopped</h3>
+            <p hlmItemDescription>A call that is not on the list does not go out.</p>
+          </div>
+          <bz-check-draw />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="notice" class="flex flex-col gap-3" data-testid="section-notice">
+    <h2 class="font-display text-2xl">Notice</h2>
+    <div hlmAlert variant="success">
+      <h3 hlmAlertTitle>It is live</h3>
+      <p hlmAlertDescription>Harbour invoices is on your shelf.</p>
+    </div>
+    <div hlmAlert variant="warning">
+      <h3 hlmAlertTitle>One check still needs you</h3>
+      <p hlmAlertDescription>Confirm the client list before you put it live.</p>
+    </div>
+    <div hlmAlert variant="destructive">
+      <h3 hlmAlertTitle>That call was stopped</h3>
+      <p hlmAlertDescription>The app tried to reach a site that is not on the list.</p>
+    </div>
+  </section>
+
+  <section id="progress" class="flex flex-col gap-4" data-testid="section-progress">
+    <h2 class="font-display text-2xl">Progress</h2>
+    <p class="text-sm">Writing it</p>
+    <hlm-progress [value]="progress()" [max]="100" aria-label="Writing it">
+      <div hlmProgressIndicator></div>
+    </hlm-progress>
+  </section>
+
+  <section id="motion" class="flex flex-col gap-10" data-testid="section-motion">
+    <h2 class="font-display text-2xl">Brand motion</h2>
+    <div class="grid gap-8 sm:grid-cols-2">
+      <div class="flex flex-col gap-3">
+        <h3 class="text-sm font-medium">Shelf loader</h3>
+        <bz-shelf-loader />
+        <bz-shelf-loader size="lg" label="Building your app" />
+      </div>
+      <div class="flex flex-col gap-3">
+        <h3 class="text-sm font-medium">Live pulse</h3>
+        <p class="flex items-center gap-2 text-sm"><bz-live-pulse /> Live</p>
+      </div>
+      <div class="flex flex-col items-start gap-3">
+        <h3 class="text-sm font-medium">Check draw</h3>
+        <bz-check-draw />
+      </div>
+      <div class="flex flex-col items-start gap-3">
+        <h3 class="text-sm font-medium">Go live</h3>
+        <bz-go-live />
+      </div>
+    </div>
+    <div class="flex flex-col gap-3">
+      <h3 class="text-sm font-medium">Build sequence</h3>
+      <bz-build-sequence />
+    </div>
+    <div class="flex flex-col gap-3">
+      <h3 class="text-sm font-medium">Blocked call</h3>
+      <bz-blocked-call />
+    </div>
+  </section>
+
+  <section id="app" class="bg-background flex flex-col gap-6 rounded-xl border p-6" data-testid="section-app" [attr.data-app]="preset()">
+    <div class="flex flex-col gap-2">
+      <h2 class="font-display text-2xl">App kit</h2>
+      <p class="text-muted-foreground text-sm">A different layer. Squarer, denser, and coloured by the owner’s preset. One primary action.</p>
+    </div>
+
+    <header class="flex flex-wrap items-center gap-3">
+      <bz-app-tile [color]="presetColor()" icon="lucideReceipt" [size]="40" label="Harbour invoices" />
+      <span class="font-display text-lg">Harbour invoices</span>
+      <div hlmTabs tab="overview" class="min-w-0">
+        <div hlmTabsList>
+          <button hlmTabsTrigger hlmTabsTrigger="overview" type="button">Home</button>
+          <button hlmTabsTrigger hlmTabsTrigger="invoices" type="button">Invoices</button>
+          <button hlmTabsTrigger hlmTabsTrigger="settings" type="button">Settings</button>
+        </div>
+      </div>
+      <button hlmBtn type="button" class="ms-auto">New invoice</button>
+    </header>
+
+    <div class="flex flex-wrap gap-2">
+      <button hlmBtn type="button" variant="outline">Export</button>
+      <button hlmBtn type="button" variant="ghost">Edit</button>
+      <button hlmBtn type="button" variant="destructive">Delete</button>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div hlmField>
+        <label hlmFieldLabel for="client-name">Client</label>
+        <input hlmInput id="client-name" type="text" value="Harbour Co" />
+      </div>
+      <div hlmField>
+        <label hlmFieldLabel for="client-list">From the list</label>
+        <hlm-native-select selectId="client-list" value="harbour">
+          <option value="harbour">Harbour Co</option>
+          <option value="northwind">Northwind</option>
+        </hlm-native-select>
+      </div>
+      <div hlmField class="sm:col-span-2">
+        <label hlmFieldLabel for="note">Note</label>
+        <textarea hlmTextarea id="note" rows="3">Due on Friday.</textarea>
+      </div>
+    </div>
+
+    <div hlmTableContainer>
+      <table hlmTable>
+        <thead hlmTHead>
+          <tr hlmTr>
+            <th hlmTh>Invoice</th>
+            <th hlmTh>Client</th>
+            <th hlmTh>Status</th>
+          </tr>
+        </thead>
+        <tbody hlmTBody>
+          <tr hlmTr>
+            <td hlmTd>1042</td>
+            <td hlmTd>Harbour Co</td>
+            <td hlmTd><span hlmBadge variant="success">Paid</span></td>
+          </tr>
+          <tr hlmTr>
+            <td hlmTd>1043</td>
+            <td hlmTd>Northwind</td>
+            <td hlmTd><span hlmBadge variant="warning">Due</span></td>
+          </tr>
+          <tr hlmTr>
+            <td hlmTd>1044</td>
+            <td hlmTd>Brightline</td>
+            <td hlmTd><span hlmBadge variant="destructive">Late</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="flex flex-wrap gap-2">
+      <span hlmBadge>Default</span>
+      <span hlmBadge variant="secondary">Secondary</span>
+      <span hlmBadge variant="outline">Outline</span>
+      <span hlmBadge variant="success">Success</span>
+      <span hlmBadge variant="warning">Warning</span>
+      <span hlmBadge variant="destructive">Destructive</span>
+    </div>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+      <tanstack-chart hlmChart [options]="barChart" />
+      <tanstack-chart hlmChart [options]="lineChart" />
+    </div>
+
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center gap-3 text-sm">
+        <hlm-spinner />
+        <span class="shimmer">Thinking…</span>
+      </div>
+      <div hlmSkeleton class="h-4 w-2/3"></div>
+      <div hlmSkeleton class="h-4 w-full"></div>
+      <div hlmSkeleton class="h-24 w-full"></div>
+    </div>
+
+    <div hlmCard>
+      <div hlmEmpty class="py-10">
+        <div hlmEmptyHeader>
+          <h3 hlmEmptyTitle>No invoices yet</h3>
+          <p hlmEmptyDescription>The first one is the only job on this screen.</p>
+        </div>
+        <div hlmEmptyContent>
+          <button hlmBtn type="button" (click)="announce()">New invoice</button>
+        </div>
+      </div>
+    </div>
+
+    <a hlmBadge variant="outline" href="#safety" class="ms-auto w-fit gap-2 py-1">
+      Made with
+      <bz-logo [wordSize]="14" />
+    </a>
+  </section>
+
+  <bz-spartan-extras />
+</main>
+
+<hlm-dialog #shotDialog>
+  <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-3xl">
+    <div hlmDialogHeader>
+      <h3 hlmDialogTitle>{{ openShot().title }}</h3>
+      <p hlmDialogDescription>A screenshot. The app opens in its own tab.</p>
+    </div>
+    <img [src]="openShot().src" [alt]="openShot().title" class="aspect-video w-full rounded-lg" />
+  </hlm-dialog-content>
+</hlm-dialog>
+
+<ng-template #accountMenu>
+  <div hlmDropdownMenu class="w-56">
+    <div hlmDropdownMenuLabel>
+      <span class="flex flex-col">
+        <span>{{ you.name }}</span>
+        <span class="text-muted-foreground text-xs font-normal">{{ you.role }}</span>
+      </span>
+    </div>
+    <div hlmDropdownMenuSeparator></div>
+    <button hlmDropdownMenuItem type="button">Your shelf</button>
+    <button hlmDropdownMenuItem type="button">Shared with me</button>
+    <button hlmDropdownMenuCheckbox type="button" [checked]="true">Email me when it is live</button>
+    <div hlmDropdownMenuSeparator></div>
+    <button hlmDropdownMenuItem type="button">Sign out</button>
+  </div>
+</ng-template>
+
+<hlm-toaster [theme]="theme.mode()" position="bottom-center" />

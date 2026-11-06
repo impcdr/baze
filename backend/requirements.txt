@@ -1,0 +1,5 @@
+falcon==4.4.0
+pymongo==4.19.0
+python-dotenv==1.2.4
+waitress==3.0.2
+pytest==8.4.2

@@ -1,0 +1,417 @@
+<section id="spartan" class="flex min-w-0 flex-col gap-6" data-testid="section-spartan">
+  <div class="flex flex-col gap-2">
+    <h2 class="font-display text-2xl">Spartan</h2>
+    <p class="text-muted-foreground max-w-xl text-sm">
+      The rest of the library, under the Baze pieces above. Each one is the generated primitive, unchanged.
+    </p>
+  </div>
+
+  <div class="grid min-w-0 gap-4 md:grid-cols-2 [&>article]:min-w-0 [&>article]:overflow-x-auto">
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Typography</h3>
+      <h2 hlmH2>The shelf</h2>
+      <p hlmLead>Apps sit on it.</p>
+      <p hlmP>One job, one primary action.</p>
+      <p hlmMuted>Shared with the people you pick.</p>
+      <small hlmSmall>Light theme is the one we ship.</small>
+      <blockquote hlmBlockquote>Put it live is the only primary button.</blockquote>
+      <ul hlmUl>
+        <li>Ocean</li>
+        <li>Forest</li>
+      </ul>
+      <p hlmP>Call it <code hlmCode>baze</code>.</p>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Label, checkbox, switch, radio, toggle</h3>
+      <label class="flex items-center gap-2">
+        <hlm-checkbox aria-label="Keep a copy" />
+        <span hlmLabel>Keep a copy</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <hlm-switch aria-label="Live" />
+        <span hlmLabel>Live</span>
+      </label>
+      <div hlmRadioGroup value="ocean" class="grid gap-2">
+        <label class="flex items-center gap-2 text-sm">
+          <hlm-radio value="ocean"><hlm-radio-indicator /></hlm-radio>
+          Ocean
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+          <hlm-radio value="forest"><hlm-radio-indicator /></hlm-radio>
+          Forest
+        </label>
+      </div>
+      <button hlmToggle type="button">Pin to the shelf</button>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Slider</h3>
+      <hlm-slider class="max-w-sm" [value]="[40]" [max]="100" aria-label="Amount" />
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Input OTP</h3>
+      <hlm-input-otp length="6" aria-label="Sign-in code">
+        <div hlmInputOtpGroup>
+          <hlm-input-otp-slot [index]="0" />
+          <hlm-input-otp-slot [index]="1" />
+          <hlm-input-otp-slot [index]="2" />
+        </div>
+        <hlm-input-otp-separator />
+        <div hlmInputOtpGroup>
+          <hlm-input-otp-slot [index]="3" />
+          <hlm-input-otp-slot [index]="4" />
+          <hlm-input-otp-slot [index]="5" />
+        </div>
+      </hlm-input-otp>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Breadcrumb</h3>
+      <nav hlmBreadcrumb>
+        <ol hlmBreadcrumbList>
+          <li hlmBreadcrumbItem>
+            <a hlmBreadcrumbLink link="/">Shelf</a>
+          </li>
+          <li hlmBreadcrumbSeparator></li>
+          <li hlmBreadcrumbItem>
+            <a hlmBreadcrumbLink link="/">My apps</a>
+          </li>
+          <li hlmBreadcrumbSeparator></li>
+          <li hlmBreadcrumbItem>
+            <span hlmBreadcrumbPage>Harbour invoices</span>
+          </li>
+        </ol>
+      </nav>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Navigation menu</h3>
+      <nav hlmNavigationMenu>
+        <ul hlmNavigationMenuList>
+          <li hlmNavigationMenuItem>
+            <a hlmNavigationMenuLink href="#top">Shelf</a>
+          </li>
+          <li hlmNavigationMenuItem>
+            <button hlmNavigationMenuTrigger type="button">Apps</button>
+            <div hlmNavigationMenuContent class="w-56">
+              <a hlmNavigationMenuLink href="#app">Harbour invoices</a>
+              <a hlmNavigationMenuLink href="#app">Shift board</a>
+            </div>
+          </li>
+        </ul>
+      </nav>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Menubar</h3>
+      <div hlmMenubar>
+        <button hlmMenubarTrigger [hlmMenubarTrigger]="fileMenu" type="button">File</button>
+        <button hlmMenubarTrigger [hlmMenubarTrigger]="editMenu" type="button">Edit</button>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Button group</h3>
+      <div hlmButtonGroup>
+        <button hlmBtn variant="outline" type="button">Day</button>
+        <button hlmBtn variant="outline" type="button">Week</button>
+        <div hlmButtonGroupSeparator></div>
+        <span hlmButtonGroupText>November</span>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Select</h3>
+      <div hlmSelect class="max-w-xs">
+        <hlm-select-trigger class="w-56">
+          <hlm-select-value />
+          <span hlmSelectPlaceholder>Pick a client</span>
+        </hlm-select-trigger>
+        <hlm-select-content *hlmSelectPortal>
+          <div hlmSelectGroup>
+            <hlm-select-item value="harbour">Harbour Co</hlm-select-item>
+            <hlm-select-item value="northwind">Northwind</hlm-select-item>
+          </div>
+        </hlm-select-content>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Combobox</h3>
+      <div hlmCombobox class="max-w-xs">
+        <hlm-combobox-trigger class="w-56">
+          <span hlmComboboxValue></span>
+          <span hlmComboboxPlaceholder>Pick a preset</span>
+        </hlm-combobox-trigger>
+        <div hlmComboboxContent *hlmComboboxPortal>
+          <hlm-combobox-input />
+          <div hlmComboboxList>
+            <hlm-combobox-item value="ocean">Ocean</hlm-combobox-item>
+            <hlm-combobox-item value="forest">Forest</hlm-combobox-item>
+            <hlm-combobox-item value="sunset">Sunset</hlm-combobox-item>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Autocomplete</h3>
+      <div hlmAutocomplete class="max-w-xs">
+        <hlm-autocomplete-input placeholder="Find a client" />
+        <div hlmAutocompleteContent *hlmAutocompletePortal>
+          <div hlmAutocompleteList>
+            <hlm-autocomplete-item value="harbour">Harbour Co</hlm-autocomplete-item>
+            <hlm-autocomplete-item value="northwind">Northwind</hlm-autocomplete-item>
+          </div>
+          <div hlmAutocompleteEmpty>Nothing matches</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Command</h3>
+      <div hlmCommand class="max-w-sm border">
+        <hlm-command-input placeholder="Search the shelf" />
+        <div hlmCommandList>
+          <div hlmCommandGroup>
+            <div hlmCommandGroupLabel>Apps</div>
+            <button hlmCommandItem value="invoices" type="button">Harbour invoices</button>
+            <button hlmCommandItem value="shifts" type="button">Shift board</button>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Calendar and date picker</h3>
+      <div class="flex flex-wrap items-start gap-6">
+        <hlm-calendar captionLayout="label" />
+        <hlm-date-picker captionLayout="label">
+          <hlm-date-picker-trigger>Pick a date</hlm-date-picker-trigger>
+        </hlm-date-picker>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Accordion</h3>
+      <div hlmAccordion>
+        <div hlmAccordionItem>
+          <hlm-accordion-trigger>What sits on the shelf?</hlm-accordion-trigger>
+          <hlm-accordion-content>Apps. Each one has one job.</hlm-accordion-content>
+        </div>
+        <div hlmAccordionItem>
+          <hlm-accordion-trigger>Who can open it?</hlm-accordion-trigger>
+          <hlm-accordion-content>The people you share it with.</hlm-accordion-content>
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Collapsible</h3>
+      <div hlmCollapsible class="flex flex-col gap-2">
+        <button hlmCollapsibleTrigger hlmBtn variant="outline" type="button" class="w-fit">Notes</button>
+        <div hlmCollapsibleContent class="text-muted-foreground text-sm">Kept with the app, not in the chat.</div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Popover, hover card, context menu</h3>
+      <div class="flex flex-wrap items-center gap-2">
+        <div hlmPopover>
+          <button hlmPopoverTrigger hlmBtn variant="outline" type="button">Open popover</button>
+          <div hlmPopoverContent *hlmPopoverPortal class="w-56 p-3 text-sm">A note that stays next to the button.</div>
+        </div>
+        <div hlmHoverCard>
+          <button hlmHoverCardTrigger hlmBtn variant="outline" type="button">Hover Ada</button>
+          <div hlmHoverCardContent *hlmHoverCardPortal class="w-56 p-3 text-sm">Ada Holm keeps the shelf.</div>
+        </div>
+        <div hlmContextMenuTrigger [hlmContextMenuTrigger]="contextMenu" class="bg-secondary grid h-16 w-40 place-items-center rounded-md text-sm">
+          Right-click
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Alert dialog and drawer</h3>
+      <div class="flex flex-wrap gap-2">
+        <hlm-alert-dialog>
+          <button hlmAlertDialogTrigger hlmBtn variant="outline" type="button">Take it down</button>
+          <hlm-alert-dialog-content *hlmAlertDialogPortal="let ctx">
+            <div hlmAlertDialogHeader>
+              <h3 hlmAlertDialogTitle>Take Harbour invoices down?</h3>
+              <p hlmAlertDialogDescription>The people you shared it with lose the link.</p>
+            </div>
+            <div hlmAlertDialogFooter>
+              <button hlmAlertDialogCancel type="button">Keep it</button>
+              <button hlmAlertDialogAction type="button">Take it down</button>
+            </div>
+          </hlm-alert-dialog-content>
+        </hlm-alert-dialog>
+        <hlm-drawer>
+          <button hlmDrawerTrigger hlmBtn variant="outline" type="button">Open drawer</button>
+          <hlm-drawer-content *hlmDrawerPortal="let ctx">
+            <div hlmDrawerHeader>
+              <h3 hlmDrawerTitle>Everyone</h3>
+              <p hlmDrawerDescription>People with a link to this app.</p>
+            </div>
+            <div hlmDrawerFooter>
+              <button hlmBtn type="button" (click)="ctx.close()">Done</button>
+            </div>
+          </hlm-drawer-content>
+        </hlm-drawer>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Carousel</h3>
+      <hlm-carousel class="w-full max-w-md">
+        <div hlmCarouselContent>
+          <div hlmCarouselItem>
+            <div class="bg-secondary grid h-32 place-items-center rounded-lg text-sm">Harbour invoices</div>
+          </div>
+          <div hlmCarouselItem>
+            <div class="bg-secondary grid h-32 place-items-center rounded-lg text-sm">Shift board</div>
+          </div>
+          <div hlmCarouselItem>
+            <div class="bg-secondary grid h-32 place-items-center rounded-lg text-sm">Shared with me</div>
+          </div>
+        </div>
+        <div class="mt-3 flex gap-2">
+          <button hlmCarouselPrevious type="button">Previous</button>
+          <button hlmCarouselNext type="button">Next</button>
+        </div>
+      </hlm-carousel>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Aspect ratio</h3>
+      <div hlmAspectRatio="16/9" class="bg-secondary max-w-sm overflow-hidden rounded-lg">
+        <div class="grid h-full place-items-center text-sm">16 / 9</div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Scroll area</h3>
+      <ng-scrollbar hlm class="border h-28 max-w-sm rounded-md">
+        <p class="p-3 text-sm">Ada Holm</p>
+        <p class="p-3 text-sm">Nico Park</p>
+        <p class="p-3 text-sm">Jules Berg</p>
+        <p class="p-3 text-sm">Sam Okonkwo</p>
+        <p class="p-3 text-sm">Harbour Co</p>
+        <p class="p-3 text-sm">Northwind</p>
+      </ng-scrollbar>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Resizable</h3>
+      <div hlmResizableGroup class="h-24 max-w-lg rounded-md border">
+        <div hlmResizablePanel [defaultSize]="50" class="grid place-items-center text-sm">Shelf</div>
+        <hlm-resizable-handle />
+        <div hlmResizablePanel [defaultSize]="50" class="grid place-items-center text-sm">Apps</div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Code block</h3>
+      <div hlmCodeBlock>
+        <div hlmCodeBlockHeader>
+          <div hlmCodeBlockTitle>harbour.ts</div>
+          <button hlmCodeBlockCopyButton type="button"></button>
+        </div>
+        <pre hlmCodeBlockContent><span hlmCodeBlockLine>const app = 'Harbour invoices'</span><span hlmCodeBlockLine>const action = 'New invoice'</span></pre>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Trace</h3>
+      <div hlmTrace>
+        <div hlmTraceLine status="running">
+          <span hlmTraceTitle>Reading the brief</span>
+        </div>
+        <div hlmTraceLine>
+          <span hlmTraceTitle>Writing the screen</span>
+        </div>
+        <div hlmTraceLine status="pending">
+          <span hlmTraceTitle>Putting it live</span>
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4">
+      <h3 class="text-sm font-medium">Marker</h3>
+      <div class="flex flex-col gap-3">
+        <div hlmMarker>
+          <span hlmMarkerIcon>1</span>
+          <div hlmMarkerContent>Ask for the app</div>
+        </div>
+        <div hlmMarker>
+          <span hlmMarkerIcon>2</span>
+          <div hlmMarkerContent>Put it live</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Pagination</h3>
+      <nav hlmPagination>
+        <ul hlmPaginationContent>
+          <li hlmPaginationItem>
+            <hlm-pagination-previous link="/" />
+          </li>
+          <li hlmPaginationItem>
+            <a hlmPaginationLink link="/" [isActive]="true">1</a>
+          </li>
+          <li hlmPaginationItem>
+            <a hlmPaginationLink link="/">2</a>
+          </li>
+          <li hlmPaginationItem>
+            <hlm-pagination-next link="/" />
+          </li>
+        </ul>
+      </nav>
+      <hlm-numbered-pagination
+        [totalItems]="42"
+        [currentPage]="page()"
+        [itemsPerPage]="pageSize()"
+        (currentPageChange)="page.set($event)"
+        (itemsPerPageChange)="pageSize.set($event)"
+      />
+    </article>
+
+    <article class="flex flex-col gap-3 rounded-xl border p-4 md:col-span-2">
+      <h3 class="text-sm font-medium">Questionnaire</h3>
+      <form hlmQuestionnaire>
+        <div hlmQuestionnaireProgress class="text-muted-foreground text-sm">1 of 1</div>
+        <fieldset hlmQuestionnaireItem name="tone">
+          <legend class="text-sm font-medium">Which tone?</legend>
+          <label hlmQuestionnaireChoice value="ocean">Ocean</label>
+          <label hlmQuestionnaireChoice value="forest">Forest</label>
+        </fieldset>
+        <button hlmQuestionnaireNext hlmBtn type="button" class="w-fit">Next</button>
+      </form>
+    </article>
+  </div>
+</section>
+
+<ng-template #fileMenu>
+  <div hlmDropdownMenu class="w-44">
+    <button hlmDropdownMenuItem type="button">New invoice</button>
+    <button hlmDropdownMenuItem type="button">Share</button>
+  </div>
+</ng-template>
+
+<ng-template #editMenu>
+  <div hlmDropdownMenu class="w-44">
+    <button hlmDropdownMenuItem type="button">Rename</button>
+    <button hlmDropdownMenuItem type="button">Duplicate</button>
+  </div>
+</ng-template>
+
+<ng-template #contextMenu>
+  <div hlmDropdownMenu class="w-44">
+    <button hlmDropdownMenuItem type="button">Open</button>
+    <button hlmDropdownMenuItem type="button">Share</button>
+  </div>
+</ng-template>
