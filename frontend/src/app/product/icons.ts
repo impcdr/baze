@@ -1,0 +1,31 @@
+import {
+  lucideArrowRight,
+  lucideArrowUpRight,
+  lucideCalendarDays,
+  lucideCheck,
+  lucideMail,
+  lucidePackage,
+  lucidePlus,
+  lucideReceipt,
+  lucideSettings,
+  lucideTrendingUp,
+  lucideUsers,
+  lucideUtensils,
+  lucideWallet,
+} from '@ng-icons/lucide';
+
+export const BAZE_ICONS = {
+  lucideArrowRight,
+  lucideArrowUpRight,
+  lucideCalendarDays,
+  lucideCheck,
+  lucideMail,
+  lucidePackage,
+  lucidePlus,
+  lucideReceipt,
+  lucideSettings,
+  lucideTrendingUp,
+  lucideUsers,
+  lucideUtensils,
+  lucideWallet,
+};

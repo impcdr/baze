@@ -1,0 +1,52 @@
+<ng-template #tile>
+  <bz-app-tile [color]="app().color" [icon]="app().icon" [size]="48" [label]="app().name" />
+</ng-template>
+
+<div class="bg-card relative flex h-full flex-col gap-3 overflow-hidden rounded-xl p-4">
+  <div class="flex min-w-0 items-start gap-3">
+    @if (app().path; as path) {
+      @if (app().external) {
+        <a class="bz-app-open shrink-0" [href]="path" target="_blank" rel="noopener" [attr.aria-label]="'Open ' + app().name">
+          <ng-container *ngTemplateOutlet="tile" />
+        </a>
+      } @else {
+        <a class="bz-app-open shrink-0" [routerLink]="path" [attr.aria-label]="'Open ' + app().name">
+          <ng-container *ngTemplateOutlet="tile" />
+        </a>
+      }
+    } @else {
+      <ng-container *ngTemplateOutlet="tile" />
+    }
+    <span class="flex min-w-0 flex-1 flex-col gap-1 pe-8">
+      <span class="truncate font-display text-lg leading-tight">{{ app().name }}</span>
+      <span class="text-muted-foreground line-clamp-2 min-h-10 text-sm leading-snug">{{ app().summary }}</span>
+    </span>
+  </div>
+
+  <div class="mt-auto flex flex-wrap items-center gap-1.5">
+    @for (label of labels(); track label.text) {
+      <span hlmBadge [variant]="label.tone">{{ label.text }}</span>
+    }
+  </div>
+
+  <button
+    hlmBtn
+    type="button"
+    variant="ghost"
+    size="icon-sm"
+    class="bz-app-gear absolute top-3 right-3"
+    [hlmDropdownMenuTrigger]="appMenu"
+    align="end"
+    [attr.aria-label]="'Actions for ' + app().name"
+  >
+    <ng-icon name="lucideSettings" />
+  </button>
+</div>
+
+<ng-template #appMenu>
+  <div hlmDropdownMenu class="w-44">
+    <button hlmDropdownMenuItem type="button">Manage app</button>
+    <button hlmDropdownMenuItem type="button">Start app</button>
+    <button hlmDropdownMenuItem type="button">Stop app</button>
+  </div>
+</ng-template>

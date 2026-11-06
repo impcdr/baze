@@ -1,0 +1,102 @@
+@if (draft(); as draft) {
+  <div class="flex flex-wrap items-stretch gap-6" data-testid="make">
+    <section class="bg-card flex min-w-0 flex-[999] basis-[40rem] flex-col gap-4 rounded-xl p-6">
+      @for (message of draft.messages; track message.id) {
+        @if (message.role === 'you') {
+          <p class="bg-primary text-primary-foreground max-w-xl self-end rounded-xl rounded-br-md px-5 py-3.5 leading-relaxed">{{ message.text }}</p>
+        } @else {
+          <div class="flex items-start gap-3">
+            <bz-logo [word]="false" [wordSize]="22" />
+            <div class="bg-background flex min-w-0 flex-1 flex-col gap-3 rounded-xl rounded-tl-md px-4 py-4">
+              <p class="leading-relaxed">{{ message.text }}</p>
+              @if (message.shots.length) {
+                <div class="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
+                  @for (shot of message.shots; track shot.id) {
+                    <button type="button" class="flex flex-col gap-1.5 text-start" [hlmDialogTriggerFor]="shotDialog" (click)="focusShot(shot)">
+                      <bz-shot class="h-28" [accent]="shot.accent" [name]="shot.name" />
+                      <span class="text-sm font-bold">{{ shot.name }}</span>
+                    </button>
+                  }
+                </div>
+              }
+              @if (message.askPreset) {
+                <p class="text-sm font-bold">Which look should it have?</p>
+                <div class="flex flex-wrap gap-2">
+                  @for (preset of presets(); track preset.id) {
+                    <button
+                      type="button"
+                      class="inline-flex h-10 items-center gap-2 rounded-md border-2 bg-card pe-3 ps-1.5 text-sm font-bold"
+                      [attr.aria-pressed]="draft.selectedPreset === preset.id"
+                      [class.border-foreground]="draft.selectedPreset === preset.id"
+                      [class.border-border]="draft.selectedPreset !== preset.id"
+                      (click)="choose(preset.id)"
+                    >
+                      <span class="size-6 rounded-full" [style.background]="preset.color"></span>
+                      {{ preset.label }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+      }
+
+      <form class="mt-auto flex flex-wrap items-center gap-3" (submit)="$event.preventDefault(); send()">
+        <div class="bg-background flex min-w-0 flex-1 items-center gap-2 rounded-xl border-2 py-1 pe-1 ps-4">
+          <label class="sr-only" for="make-reply">Tell Baze what to change</label>
+          <input
+            id="make-reply"
+            class="min-w-0 flex-1 bg-transparent py-2 outline-none"
+            [placeholder]="draft.composerPlaceholder"
+            [value]="reply()"
+            (input)="reply.set($any($event.target).value)"
+          />
+          <button hlmBtn type="submit" size="icon" variant="default" class="bg-foreground text-background" aria-label="Send">
+            <ng-icon name="lucideArrowRight" />
+          </button>
+        </div>
+        <button hlmBtn type="button" size="lg" (click)="build()">
+          {{ draft.makeLabel }}
+          <ng-icon name="lucideArrowRight" />
+        </button>
+      </form>
+    </section>
+
+    <aside class="flex min-w-72 flex-1 flex-col gap-4">
+      <div class="bg-card flex flex-col gap-3 rounded-xl p-6">
+        <span hlmBadge class="w-fit" variant="secondary">{{ draft.kicker }}</span>
+        <h1 class="font-display text-xl">{{ draft.briefTitle }}</h1>
+        <dl class="text-sm">
+          @for (row of draft.brief; track row.label) {
+            <div class="flex items-start justify-between gap-3 border-t py-2.5 first:border-t-0">
+              <dt class="text-muted-foreground">{{ row.label }}</dt>
+              <dd class="inline-flex items-center gap-2 text-end font-bold">
+                @if (row.swatch) {
+                  <span class="size-4 rounded-full" [style.background]="row.swatch"></span>
+                }
+                {{ row.value }}
+              </dd>
+            </div>
+          }
+        </dl>
+      </div>
+      <p class="bg-secondary text-secondary-foreground rounded-xl p-5 text-sm leading-relaxed">{{ draft.note }}</p>
+    </aside>
+  </div>
+} @else if (draft() === null) {
+  <p class="text-muted-foreground">That conversation isn’t on the shelf.</p>
+}
+
+<hlm-dialog #shotDialog>
+  <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-xl">
+    @if (openShot(); as shot) {
+      <div hlmDialogHeader>
+        <h2 hlmDialogTitle>{{ shot.name }}</h2>
+        <p hlmDialogDescription>A screenshot. The app opens in its own tab.</p>
+      </div>
+      <bz-shot class="h-64" [accent]="shot.accent" [name]="shot.name" />
+      <button hlmBtn type="button" variant="outline" (click)="ctx.close()">Close</button>
+    }
+  </hlm-dialog-content>
+</hlm-dialog>

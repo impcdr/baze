@@ -1,0 +1,83 @@
+<div class="flex h-svh w-full flex-col overflow-hidden">
+  <header class="bz-bar shrink-0">
+    <div class="bz-bar__row">
+    <a class="bz-bar__brand" routerLink="/" aria-label="baze home">
+      <bz-logo [wordSize]="28" />
+    </a>
+    <nav class="bz-nav" aria-label="Places">
+      <span class="bz-nav__glide" aria-hidden="true"></span>
+      <a routerLink="/apps" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">My apps</a>
+      <a routerLink="/chat" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Chat</a>
+    </nav>
+    @if (account(); as person) {
+      <button
+        hlmBtn
+        type="button"
+        variant="ghost"
+        class="bz-bar__account size-10 rounded-full p-0 font-display text-sm font-extrabold"
+        [style.background]="person.color"
+        [style.color]="person.ink"
+        [hlmDialogTriggerFor]="settingsDialog"
+        [attr.aria-label]="person.name + ', settings'"
+      >
+        {{ person.initials }}
+      </button>
+      <hlm-dialog #settingsDialog>
+        <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-lg">
+          <div hlmDialogHeader>
+            <h2 hlmDialogTitle>Settings</h2>
+            <p hlmDialogDescription>How {{ person.name }} shows up on this shelf. Nothing here is saved yet.</p>
+          </div>
+          <form class="flex flex-col gap-4" (submit)="$event.preventDefault()">
+            <label class="flex flex-col gap-1.5 text-sm font-medium">
+              Name
+              <input hlmInput name="name" [value]="person.name" autocomplete="name" />
+            </label>
+            <label class="flex flex-col gap-1.5 text-sm font-medium">
+              Email
+              <input hlmInput type="email" name="email" [value]="person.email" autocomplete="email" />
+            </label>
+            <label class="flex flex-col gap-1.5 text-sm font-medium">
+              Studio
+              <input hlmInput name="studio" value="Lindner Studio" autocomplete="organization" />
+            </label>
+            <label class="flex flex-col gap-1.5 text-sm font-medium">
+              Appearance
+              <select hlmInput name="appearance">
+                <option value="light" selected>Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <label class="flex flex-col gap-1.5 text-sm font-medium">
+              Language
+              <select hlmInput name="language">
+                <option value="en" selected>English</option>
+                <option value="de">Deutsch</option>
+              </select>
+            </label>
+            <fieldset class="flex flex-col gap-2">
+              <legend class="text-sm font-medium">Email</legend>
+              <label class="flex items-center gap-2 text-sm font-normal">
+                <input type="checkbox" name="ready" checked />
+                When an app is ready
+              </label>
+              <label class="flex items-center gap-2 text-sm font-normal">
+                <input type="checkbox" name="shared" checked />
+                When someone shares an app
+              </label>
+            </fieldset>
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+              <button hlmBtn type="submit">Save</button>
+            </div>
+          </form>
+        </hlm-dialog-content>
+      </hlm-dialog>
+    }
+    </div>
+  </header>
+  <div class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col overflow-hidden px-6">
+    <router-outlet />
+  </div>
+</div>
+<hlm-toaster [theme]="theme.mode()" position="bottom-center" />

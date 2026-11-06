@@ -1,0 +1,11 @@
+.env
+.env.*
+node_modules
+dist
+.venv
+__pycache__
+*.pyc
+.angular
+.nx/cache
+test-results
+*.log

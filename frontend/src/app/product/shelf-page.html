@@ -1,0 +1,48 @@
+@if (shelf(); as shelf) {
+  <section class="flex flex-col gap-8" data-testid="apps">
+    <div class="flex flex-wrap items-center gap-2">
+        @for (filter of shelf.filters; track filter.id) {
+          <button
+            hlmBtn
+            type="button"
+            [variant]="status() === filter.id ? 'default' : 'outline'"
+            (click)="choose(filter.id)"
+          >
+            {{ filter.label }}
+          </button>
+        }
+        <button hlmBtn type="button" size="lg" (click)="make()">
+          <ng-icon name="lucidePlus" />
+          {{ shelf.makeLabel }}
+        </button>
+    </div>
+
+    @if (shelf.apps.length === 0 && shelf.shared.length === 0) {
+      <div hlmEmpty class="bg-card rounded-xl py-12">
+        <div hlmEmptyHeader>
+          <h2 hlmEmptyTitle>{{ shelf.empty }}</h2>
+        </div>
+      </div>
+    } @else {
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+        @for (app of shelf.apps; track app.id) {
+          <bz-app-card [app]="app" />
+        }
+      </div>
+
+      @if (shelf.shared.length > 0) {
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1">
+            <h2 class="font-display text-2xl tracking-tight">{{ shelf.sharedTitle }}</h2>
+            <p class="text-muted-foreground">{{ shelf.sharedSummary }}</p>
+          </div>
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+            @for (app of shelf.shared; track app.id) {
+              <bz-app-card [app]="app" />
+            }
+          </div>
+        </div>
+      }
+    }
+  </section>
+}

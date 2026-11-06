@@ -1,0 +1,61 @@
+@if (draft(); as draft) {
+  <div class="flex flex-wrap items-stretch gap-6" data-testid="ready">
+    <section class="bg-card flex min-h-[32rem] min-w-0 flex-[999] basis-[36rem] flex-col gap-5 rounded-xl p-8">
+      <span hlmBadge variant="success" class="w-fit">{{ draft.ready.kicker }}</span>
+      <div class="flex items-center gap-4">
+        <bz-app-tile [color]="draft.ready.color" [icon]="draft.ready.icon" [size]="72" [label]="draft.ready.title" />
+        <div class="flex flex-col gap-1">
+          <h1 class="font-display text-4xl tracking-tight">{{ draft.ready.title }}</h1>
+          <p class="text-muted-foreground text-sm">{{ draft.ready.address }}</p>
+        </div>
+      </div>
+      <div class="grid gap-3 sm:grid-cols-2">
+        @for (fact of draft.ready.facts; track fact.label) {
+          <div class="bg-background flex flex-col gap-1 rounded-xl p-4">
+            <span class="text-muted-foreground text-sm">{{ fact.label }}</span>
+            <strong class="inline-flex items-center gap-2 text-base">
+              @if (fact.swatch) {
+                <span class="size-4 rounded-full" [style.background]="fact.swatch"></span>
+              }
+              {{ fact.value }}
+            </strong>
+          </div>
+        }
+      </div>
+      <div class="mt-auto flex flex-wrap items-center gap-4">
+        <a hlmBtn variant="outline" size="lg" [href]="draft.ready.openPath" target="_blank" rel="noopener">
+          {{ draft.ready.openLabel }}
+          <ng-icon name="lucideArrowUpRight" />
+        </a>
+        <p class="text-muted-foreground max-w-sm text-sm">{{ draft.ready.openHint }}</p>
+      </div>
+    </section>
+
+    <aside class="flex min-w-72 flex-1 flex-col gap-4">
+      <h2 class="font-display px-1 text-2xl">{{ draft.ready.safetyTitle }}</h2>
+      <ul class="bg-card flex flex-col rounded-xl px-5">
+        @for (check of draft.ready.checks; track check.id) {
+          <li class="flex items-center gap-3 border-t py-3 first:border-t-0">
+            <span
+              class="grid size-8 shrink-0 place-items-center rounded-full"
+              [class.bg-success/20]="check.tone === 'pass'"
+              [class.text-success-foreground]="check.tone === 'pass'"
+              [class.bg-warning/30]="check.tone === 'changed'"
+              [class.text-warning-foreground]="check.tone === 'changed'"
+              aria-hidden="true"
+            >
+              <ng-icon [name]="check.tone === 'pass' ? 'lucideCheck' : 'lucideMail'" />
+            </span>
+            <span class="text-sm leading-snug">{{ check.text }}</span>
+          </li>
+        }
+      </ul>
+      <div class="mt-auto flex flex-col gap-2">
+        <button hlmBtn type="button" size="lg" (click)="publish()">{{ draft.ready.publishLabel }}</button>
+        <button hlmBtn type="button" variant="outline" (click)="share()">{{ draft.ready.shareLabel }}</button>
+      </div>
+    </aside>
+  </div>
+} @else if (draft() === null) {
+  <p class="text-muted-foreground">That app isn’t ready.</p>
+}

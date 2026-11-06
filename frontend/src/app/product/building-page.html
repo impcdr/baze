@@ -1,0 +1,38 @@
+@if (draft(); as draft) {
+  <div class="flex flex-wrap items-stretch gap-6" data-testid="building">
+    <section class="bg-card flex min-h-[32rem] min-w-0 flex-[999] basis-[36rem] flex-col items-center gap-4 rounded-xl p-8">
+      <span hlmBadge variant="secondary" class="self-start">{{ draft.build.kicker }}</span>
+      <bz-shelf-loader size="lg" [label]="draft.build.title" />
+      <h1 class="font-display text-center text-4xl tracking-tight">{{ draft.build.title }}</h1>
+      <p class="text-muted-foreground max-w-xl text-center">{{ draft.build.subtitle }}</p>
+      <div class="mt-auto grid w-full max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
+        @for (step of draft.build.steps; track step.id) {
+          <div class="flex flex-col gap-2">
+            <hlm-progress [value]="step.progress" [max]="100" [attr.aria-label]="step.label">
+              <div hlmProgressIndicator></div>
+            </hlm-progress>
+            <span class="text-sm" [class.font-bold]="step.state === 'active'" [class.text-muted-foreground]="step.state === 'waiting'">{{ step.label }}</span>
+          </div>
+        }
+      </div>
+    </section>
+    <aside class="flex min-w-72 flex-1 flex-col gap-4">
+      @if (draft.build.noticeTitle) {
+        <div hlmAlert variant="warning">
+          <h2 hlmAlertTitle>{{ draft.build.noticeTitle }}</h2>
+          <p hlmAlertDescription>{{ draft.build.noticeBody }}</p>
+        </div>
+      }
+      <div class="bg-card flex flex-1 flex-col gap-3 rounded-xl p-6">
+        <h2 class="font-display text-xl">{{ draft.build.waitingTitle }}</h2>
+        <p class="text-muted-foreground leading-relaxed">{{ draft.build.waitingBody }}</p>
+        <div class="mt-auto flex flex-col gap-2">
+          <a hlmBtn [routerLink]="['/ready', draft.id]">Show me when it’s ready</a>
+          <a hlmBtn variant="outline" routerLink="/">Back to home</a>
+        </div>
+      </div>
+    </aside>
+  </div>
+} @else if (draft() === null) {
+  <p class="text-muted-foreground">That build isn’t on the shelf.</p>
+}

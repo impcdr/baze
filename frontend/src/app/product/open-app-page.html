@@ -1,0 +1,100 @@
+@if (workspace(); as app) {
+  @if (section(); as section) {
+    <div class="flex min-h-full flex-col" data-testid="open-app">
+      <header class="bg-card flex flex-wrap items-center gap-4 border-b px-6 py-3">
+        <bz-app-tile [color]="app.color" [icon]="app.icon" [size]="34" [label]="app.name" />
+        <span class="font-display text-lg">{{ app.name }}</span>
+        <nav class="me-auto flex flex-wrap gap-1" aria-label="App">
+          @for (item of app.sections; track item.id) {
+            <button
+              type="button"
+              class="rounded-md px-3 py-2 text-sm"
+              [class.bg-accent]="item.id === section.id"
+              [class.font-bold]="item.id === section.id"
+              [class.text-accent-foreground]="item.id === section.id"
+              [class.text-muted-foreground]="item.id !== section.id"
+              (click)="choose(item.id)"
+            >
+              {{ item.label }}
+            </button>
+          }
+        </nav>
+        <button hlmBtn type="button" variant="outline" (click)="act(app.secondaryAction)">{{ app.secondaryAction }}</button>
+        <button hlmBtn type="button" (click)="act(app.primaryAction)">{{ app.primaryAction }}</button>
+      </header>
+
+      <main class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-6">
+        <h1 class="font-display text-2xl">{{ section.panel.title }}</h1>
+        @if (section.panel.empty) {
+          <div hlmEmpty class="bg-card rounded-xl border py-12">
+            <div hlmEmptyHeader>
+              <h2 hlmEmptyTitle>{{ section.panel.empty }}</h2>
+            </div>
+          </div>
+        } @else {
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+            @for (stat of section.panel.stats; track stat.label) {
+              <div class="bg-card flex flex-col gap-1 rounded-xl border p-4">
+                <span class="text-muted-foreground text-xs">{{ stat.label }}</span>
+                <span class="font-display text-2xl">{{ stat.value }}</span>
+                @if (stat.note) {
+                  <span class="text-success-foreground text-xs font-bold">{{ stat.note }}</span>
+                }
+              </div>
+            }
+          </div>
+          <div class="flex flex-wrap items-stretch gap-4">
+            <div class="bg-card min-w-0 flex-[999] basis-[36rem] overflow-x-auto rounded-xl border px-4">
+              <div class="text-muted-foreground grid grid-cols-[4rem_minmax(0,1.6fr)_minmax(0,0.8fr)_11rem] gap-3 border-b py-2.5 text-xs font-bold">
+                @for (column of section.panel.columns; track column) {
+                  <span>{{ column }}</span>
+                }
+              </div>
+              @for (row of section.panel.rows; track row.id) {
+                <div class="grid grid-cols-[4rem_minmax(0,1.6fr)_minmax(0,0.8fr)_11rem] items-center gap-3 border-b py-2.5 text-sm last:border-b-0">
+                  @for (cell of row.cells; track $index) {
+                    <span [class.text-muted-foreground]="$index === 0" [class.font-bold]="$index === 1">{{ cell }}</span>
+                  }
+                  @if (row.action) {
+                    <button hlmBtn type="button" variant="outline" size="sm" (click)="act(row.action)">{{ row.action }}</button>
+                  } @else if (row.badge) {
+                    <span
+                      hlmBadge
+                      class="w-fit"
+                      [variant]="row.badge.tone === 'success' ? 'success' : row.badge.tone === 'warning' ? 'warning' : 'secondary'"
+                    >
+                      {{ row.badge.label }}
+                    </span>
+                  }
+                </div>
+              }
+            </div>
+            <div class="bg-card flex min-w-64 flex-1 flex-col gap-2 rounded-xl border p-4">
+              <span class="text-sm font-bold">{{ section.panel.chartTitle }}</span>
+              <div class="flex h-36 items-end gap-2" role="img" [attr.aria-label]="section.panel.chartEnd">
+                @for (bar of section.panel.bars; track $index) {
+                  <span
+                    class="flex-1 rounded-t-md"
+                    [style.height.%]="bar.height"
+                    [class.bg-primary]="bar.current"
+                    [class.bg-accent]="!bar.current"
+                  ></span>
+                }
+              </div>
+              <div class="text-muted-foreground flex justify-between text-xs">
+                <span>{{ section.panel.chartStart }}</span>
+                <span>{{ section.panel.chartEnd }}</span>
+              </div>
+            </div>
+          </div>
+        }
+        <a routerLink="{{ app.madeWithPath }}" class="bg-card ms-auto inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-bold no-underline">
+          <bz-logo [wordSize]="14" />
+          {{ app.madeWithLabel }}
+        </a>
+      </main>
+    </div>
+  }
+} @else if (workspace() === null) {
+  <p class="text-muted-foreground p-8">That app isn’t on the shelf.</p>
+}
