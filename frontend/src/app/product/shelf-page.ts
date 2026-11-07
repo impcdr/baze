@@ -39,8 +39,10 @@ export class ShelfPage {
   }
 
   protected make(): void {
-    this.api.createDraft('A new app for the shelf').subscribe((draft) => {
-      void this.router.navigate(['/make', draft.id]);
-    });
+    void this.router.navigate(['/creator']);
+  }
+
+  protected reload(): void {
+    this.api.apps(this.status()).subscribe((page) => this.shelf.set(page));
   }
 }

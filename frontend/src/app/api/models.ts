@@ -1,4 +1,4 @@
-export type AppStatus = 'live' | 'building' | 'attention' | 'paused';
+export type AppStatus = 'live' | 'stopped' | 'building' | 'attention' | 'paused' | 'error';
 export type PresetId = 'ocean' | 'forest' | 'sunset' | 'plum' | 'graphite' | 'rose';
 export type AppLabelTone = 'default' | 'secondary' | 'success' | 'warning' | 'outline';
 
@@ -33,6 +33,53 @@ export interface ShelfApp {
   path: string | null;
   external: boolean;
   sharedBy: string | null;
+  runnable: boolean;
+  deletable: boolean;
+  statusError: string | null;
+}
+
+export interface AppTurn {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number;
+}
+
+export interface AppManage {
+  id: string;
+  name: string;
+  summary: string;
+  status: AppStatus;
+  statusLabel: string;
+  createdAt: number | null;
+  lastRunAt: number | null;
+  path: string | null;
+  color: string;
+  icon: string;
+  runnable: boolean;
+  deletable: boolean;
+  statusError: string | null;
+  boxReady: boolean;
+  steps: AppStep[];
+  messages: AppTurn[];
+}
+
+export interface AppStep {
+  id: string;
+  label: string;
+  state: 'waiting' | 'active' | 'done';
+}
+
+export interface AppSketch {
+  name: string;
+  summary: string;
+  icon: string;
+  color: string;
+}
+
+export interface CreatorThread {
+  messages: AppTurn[];
+  sketch: AppSketch;
 }
 
 export interface Suggestion {

@@ -1,6 +1,6 @@
 from falcon import testing
 
-from baze_api.catalog import SHIFTS_ID, STUDIO_ID
+from baze_api.catalog import FOLLOWUPS_ID, STUDIO_ID, WATCHLIST_ID
 
 TOKEN = {"Authorization": "Bearer test-token-test-token"}
 
@@ -18,22 +18,32 @@ def test_home_shelf_and_studio_draft_match_the_catalog(client):
     home = http.simulate_get("/api/home")
     assert home.status_code == 200
     assert home.json["greeting"] == "Good afternoon, Lena"
-    assert home.json["seeAllLabel"] == "See all 6"
+    assert home.json["seeAllLabel"] == "See all 3"
     assert [app["name"] for app in home.json["featured"]] == [
         "Studio Invoices",
         "Stock watchlist",
-        "Stock room",
-        "Café shifts",
+        "Client follow-ups",
     ]
-    assert home.json["featured"][0]["path"] == f"/{STUDIO_ID}"
+    assert [app["path"] for app in home.json["featured"]] == [
+        f"/{STUDIO_ID}",
+        f"/{WATCHLIST_ID}",
+        f"/{FOLLOWUPS_ID}",
+    ]
 
     shelf = http.simulate_get("/api/apps")
     assert shelf.status_code == 200
-    assert shelf.json["summary"] == "6 apps on your shelf · 3 live"
+    assert shelf.json["summary"] == "3 apps on your shelf · 0 live"
+    assert all(
+        label.get("text") != "Live"
+        for app in shelf.json["apps"] + shelf.json["shared"]
+        for label in (app.get("labels") or [])
+    )
     by_slug = {app["slug"]: app for app in shelf.json["apps"]}
+    assert set(by_slug) == {"studio-invoices", "stock-watchlist", "client-follow-ups"}
     assert by_slug["studio-invoices"]["path"] == f"/{STUDIO_ID}"
-    assert by_slug["cafe-shifts"]["path"] == "/building/shifts"
-    assert [app["name"] for app in shelf.json["shared"]] == ["Holiday cover", "Menu board"]
+    assert by_slug["stock-watchlist"]["path"] == f"/{WATCHLIST_ID}"
+    assert by_slug["client-follow-ups"]["path"] == f"/{FOLLOWUPS_ID}"
+    assert shelf.json["shared"] == []
 
     draft = http.simulate_get("/api/drafts/studio")
     assert draft.status_code == 200
@@ -43,26 +53,26 @@ def test_home_shelf_and_studio_draft_match_the_catalog(client):
     workspace = http.simulate_get(f"/api/apps/{STUDIO_ID}/workspace")
     assert workspace.status_code == 200
     assert workspace.json["name"] == "Studio Invoices"
-    assert workspace.json["sections"][0]["panel"]["rows"][0]["cells"][1] == "Nordlicht Café"
+    assert workspace.json["sections"][0]["panel"]["rows"] == []
 
 
 def test_draft_edits_persist_and_publish_uses_the_app_id(client):
     http = testing.TestClient(client)
-    patched = http.simulate_patch("/api/drafts/shifts", json={"preset": "plum"})
+    patched = http.simulate_patch("/api/drafts/studio", json={"preset": "plum"})
     assert patched.status_code == 200
     assert patched.json["selectedPreset"] == "plum"
     assert patched.json["ready"]["facts"][2]["value"] == "Plum"
 
-    posted = http.simulate_post("/api/drafts/shifts/messages", json={"text": "Add Sunday"})
+    posted = http.simulate_post("/api/drafts/studio/messages", json={"text": "Add Sunday"})
     assert posted.json["messages"][-1]["role"] == "baze"
     assert posted.json["messages"][-2]["text"] == "Add Sunday"
 
-    published = http.simulate_post("/api/drafts/shifts/publish", json={})
+    published = http.simulate_post("/api/drafts/studio/publish", json={})
     assert published.status_code == 200
     shelf = http.simulate_get("/api/apps", query_string="status=live")
-    shifts = next(app for app in shelf.json["apps"] if app["slug"] == "cafe-shifts")
-    assert shifts["status"] == "live"
-    assert shifts["path"] == f"/{SHIFTS_ID}"
+    studio = next(app for app in shelf.json["apps"] if app["slug"] == "studio-invoices")
+    assert studio["status"] == "live"
+    assert studio["path"] == f"/{STUDIO_ID}"
 
     shared = http.simulate_post("/api/drafts/studio/share", json={})
     assert shared.json["message"] == "The safety check link is ready to share."
@@ -72,7 +82,7 @@ def test_new_prompt_creates_a_draft_and_invoice_reopens_studio(client):
     http = testing.TestClient(client)
     created = http.simulate_post("/api/drafts", json={"prompt": "A quiet reading list"})
     assert created.status_code == 201
-    assert created.json["id"] == "draft-3"
+    assert created.json["id"] == "draft-2"
     assert created.json["messages"][0]["text"] == "A quiet reading list"
 
     again = http.simulate_post("/api/drafts", json={"prompt": "Invoices for the studio"})

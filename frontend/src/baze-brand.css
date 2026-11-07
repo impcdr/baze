@@ -8,15 +8,24 @@
   --bz-soft: color-mix(in srgb, var(--warning) 28%, var(--background));
 }
 
+/* Reading copy. Same size as the line under an app name. Chat uses this too. */
+.bz-copy {
+  font-size: var(--bz-text-meta);
+  line-height: 1.375;
+}
+
 .bz-app-tile {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  border-radius: 36%;
+  overflow: hidden;
 }
-.bz-app-tile ng-icon {
-  color: #fff;
+.bz-app-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 .bz-app-open {
   display: inline-flex;
@@ -392,10 +401,31 @@
 .bz-bar__account {
   justify-self: end;
 }
+.bz-foot {
+  flex-shrink: 0;
+  width: 100%;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+}
+.bz-foot__row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding: 0.85rem 1.5rem 1rem;
+}
+.bz-foot__brand {
+  text-decoration: none;
+  opacity: 0.72;
+}
+.bz-foot__brand:hover {
+  opacity: 1;
+}
 .bz-bar .bz-nav {
   position: relative;
   display: inline-grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(6.75rem, auto));
   align-items: center;
   padding: 0.2rem;
   border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
@@ -408,20 +438,24 @@
   top: 0.2rem;
   bottom: 0.2rem;
   left: 0.2rem;
-  width: calc(50% - 0.2rem);
+  width: calc((100% - 0.4rem) / 3);
   border-radius: 999px;
   background: color-mix(in srgb, var(--card) 82%, transparent);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent);
   opacity: 0;
   transition: transform 320ms var(--bz-ease-out);
 }
-.bz-bar .bz-nav:has(a:first-of-type.is-active) .bz-nav__glide {
+.bz-bar .bz-nav:has(a:nth-of-type(1).is-active) .bz-nav__glide {
   opacity: 1;
   transform: translateX(0);
 }
-.bz-bar .bz-nav:has(a:last-of-type.is-active) .bz-nav__glide {
+.bz-bar .bz-nav:has(a:nth-of-type(2).is-active) .bz-nav__glide {
   opacity: 1;
   transform: translateX(100%);
+}
+.bz-bar .bz-nav:has(a:nth-of-type(3).is-active) .bz-nav__glide {
+  opacity: 1;
+  transform: translateX(200%);
 }
 .bz-bar .bz-nav a {
   position: relative;
@@ -537,6 +571,204 @@
   60%, 100% { transform: translate(var(--x), calc(var(--y) + 24px)) rotate(var(--r)); opacity: 0; }
 }
 
+/* Empty shelf. Plays once on enter. Resting styles are the finished frame. */
+.bz-empty-shelf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--foreground);
+}
+.bz-empty-shelf svg {
+  display: block;
+  overflow: visible;
+}
+.bz-empty-shelf .shelf {
+  fill: var(--foreground);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: bz-grow-x 600ms var(--bz-ease-out) both;
+}
+.bz-empty-shelf .ghost {
+  fill: var(--card);
+  stroke: #8db0ff;
+  stroke-width: 3;
+  stroke-dasharray: 6 5;
+  transform-box: fill-box;
+  animation: bz-ghost-land 700ms var(--bz-ease-land) 450ms both;
+}
+.dark .bz-empty-shelf .ghost {
+  stroke: #7a9ff0;
+}
+.bz-empty-shelf .plus {
+  stroke: var(--success-foreground);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: bz-pop-in 420ms var(--bz-ease-land) 1s both;
+}
+.bz-empty-shelf__title {
+  margin: 0;
+  font-family: var(--font-display), 'Red Hat Display', system-ui, sans-serif;
+  font-size: var(--bz-text-display);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  animation: bz-rise var(--bz-dur-arrive) var(--bz-ease-out) 1.1s both;
+}
+.bz-empty-shelf__text {
+  margin: 0;
+  max-width: 36ch;
+  color: var(--muted-foreground);
+  font-size: 1rem;
+  line-height: 1.5;
+  animation: bz-rise var(--bz-dur-arrive) var(--bz-ease-out) 1.25s both;
+}
+@keyframes bz-grow-x {
+  from { transform: scaleX(0); }
+}
+@keyframes bz-ghost-land {
+  from { opacity: 0; transform: translateY(-48px); }
+}
+@keyframes bz-pop-in {
+  from { opacity: 0; transform: scale(0); }
+}
+@keyframes bz-rise {
+  from { opacity: 0; transform: translateY(14px); }
+}
+
+/* Creator: shelf and text box up top, then the same box settles into the chat. */
+.bz-reception {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  max-width: 36rem;
+  min-height: 0;
+  margin-inline: auto;
+  padding-top: 3.25rem;
+  overflow: visible;
+  background: transparent;
+  border-radius: var(--radius);
+  transition:
+    max-width 560ms var(--bz-ease-out),
+    padding 560ms var(--bz-ease-out),
+    background-color 560ms var(--bz-ease-out);
+}
+.bz-reception.is-chat {
+  align-items: stretch;
+  max-width: 42rem;
+  padding-top: 0;
+  overflow: hidden;
+  background: var(--card);
+}
+.bz-reception__welcome {
+  flex: 0 0 auto;
+  width: 100%;
+  max-height: 28rem;
+  margin-bottom: 1.75rem;
+  overflow: visible;
+  opacity: 1;
+  transition:
+    max-height 560ms var(--bz-ease-out),
+    margin-bottom 560ms var(--bz-ease-out),
+    opacity 420ms var(--bz-ease-out);
+}
+.bz-reception.is-chat .bz-reception__welcome {
+  max-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+.bz-reception__log {
+  flex: 0 1 auto;
+  width: 100%;
+  max-height: 0;
+  min-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    flex-grow 560ms var(--bz-ease-out),
+    opacity 480ms var(--bz-ease-out);
+}
+.bz-reception.is-chat .bz-reception__log {
+  flex-grow: 1;
+  max-height: none;
+  opacity: 1;
+  overflow: auto;
+}
+.bz-reception__log-inner {
+  min-height: 0;
+}
+.bz-reception.is-chat .bz-reception__log-inner {
+  height: 100%;
+  overflow: auto;
+}
+.bz-reception__sketch {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.bz-reception__sketch bz-app-tile.is-blank {
+  opacity: 0.55;
+}
+.bz-reception:not(.is-chat) .bz-reception__form {
+  width: min(100%, 22rem);
+  border-radius: 999px;
+  padding: 0.2rem 0.2rem 0.2rem 1.15rem;
+  animation: bz-rise var(--bz-dur-arrive) var(--bz-ease-out) 1.15s both;
+}
+.bz-reception__form {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 0.35rem 0.4rem 0.35rem 1rem;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent);
+  transition:
+    width 560ms var(--bz-ease-out),
+    border-color 560ms var(--bz-ease-out),
+    border-radius 560ms var(--bz-ease-out),
+    background-color 560ms var(--bz-ease-out),
+    padding 560ms var(--bz-ease-out),
+    box-shadow 560ms var(--bz-ease-out);
+}
+.bz-reception:not(.is-chat) .bz-reception__send:not(.is-ready) {
+  display: none;
+}
+.bz-reception:not(.is-chat) .bz-reception__form textarea {
+  height: 2.25rem;
+  min-height: 0;
+  padding: 0;
+  line-height: 2.25rem;
+}
+.bz-reception__form textarea {
+  background: transparent;
+  padding: 0.55rem 0;
+}
+.bz-reception.is-chat .bz-reception__form {
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding: 0.25rem 1rem 1rem;
+  animation: none;
+}
+.bz-reception.is-chat .bz-reception__form textarea {
+  border-radius: var(--radius);
+  background: var(--background);
+  padding: 0.5rem 0.875rem;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .bz-logo-reveal *,
   .bz-loader *,
@@ -545,7 +777,13 @@
   .bz-check *,
   .bz-blocked *,
   .bz-arrive > *,
-  .bz-golive__burst i {
+  .bz-golive__burst i,
+  .bz-empty-shelf,
+  .bz-empty-shelf *,
+  .bz-reception,
+  .bz-reception__welcome,
+  .bz-reception__log,
+  .bz-reception__form {
     animation: none !important;
     transition: none !important;
   }

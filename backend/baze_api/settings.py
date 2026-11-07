@@ -10,6 +10,11 @@ from dotenv import load_dotenv
 
 ENV_PATH = Path("/home/agent/.env")
 DEFAULT_FRONTEND = Path("/home/agent/frontend/dist/frontend/browser")
+DEFAULT_APPS_ROOT = Path("/home/agent/baze/data/apps")
+DEFAULT_HERMES_IMAGE = (
+    "nousresearch/hermes-agent@sha256:adb7890916de63245523492be8f68f9d2095fecbec4e2a6dab7960381f0fc002"
+)
+DEFAULT_VULTR_BASE = "https://api.vultrinference.com/v1"
 
 
 @dataclass(frozen=True)
@@ -24,6 +29,19 @@ class Settings:
     api_port: int
     api_token: str
     frontend_dist: Path
+    vultr_api_key: str
+    vultr_base_url: str
+    model_id: str
+    reasoning_effort: str
+    proxy_port: int
+    apps_root: Path
+    hermes_image: str
+    hermes_port_start: int
+    memory_mb: int
+    cpus: str
+    app_cap: int
+    health_timeout: float
+    health_interval: float
 
 
 def load_settings() -> Settings:
@@ -46,4 +64,17 @@ def load_settings() -> Settings:
         api_port=int(os.environ.get("API_PORT", "8000")),
         api_token=token,
         frontend_dist=Path(os.environ.get("FRONTEND_DIST", str(DEFAULT_FRONTEND))),
+        vultr_api_key=os.environ.get("VULTR_INFERENCE_API_KEY", ""),
+        vultr_base_url=os.environ.get("VULTR_INFERENCE_BASE_URL", DEFAULT_VULTR_BASE).rstrip("/"),
+        model_id=os.environ.get("BAZE_MODEL_ID", "deepseek-v4.1-flash-1017"),
+        reasoning_effort=os.environ.get("BAZE_REASONING_EFFORT", "low"),
+        proxy_port=int(os.environ.get("BAZE_PROXY_PORT", "8001")),
+        apps_root=Path(os.environ.get("BAZE_APPS_ROOT", str(DEFAULT_APPS_ROOT))),
+        hermes_image=os.environ.get("HERMES_IMAGE", DEFAULT_HERMES_IMAGE),
+        hermes_port_start=int(os.environ.get("BAZE_HERMES_PORT_START", "19080")),
+        memory_mb=int(os.environ.get("BAZE_APP_MEMORY_MB", "512")),
+        cpus=os.environ.get("BAZE_APP_CPUS", "1"),
+        app_cap=int(os.environ.get("BAZE_APP_CAP", "2")),
+        health_timeout=float(os.environ.get("BAZE_HEALTH_TIMEOUT", "90")),
+        health_interval=float(os.environ.get("BAZE_HEALTH_INTERVAL", "1")),
     )

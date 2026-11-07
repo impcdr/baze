@@ -74,6 +74,16 @@ class ServiceInfo:
                     "auth": True,
                     "body": {"content": "string"},
                 },
+                {"method": "GET", "path": "/api/runtime/apps", "auth": True},
+                {"method": "POST", "path": "/api/runtime/apps", "auth": True, "body": {"name": "string"}},
+                {"method": "GET", "path": "/api/runtime/apps/{id}", "auth": True},
+                {"method": "DELETE", "path": "/api/runtime/apps/{id}", "auth": True},
+                {
+                    "method": "POST",
+                    "path": "/api/runtime/apps/{id}/messages",
+                    "auth": True,
+                    "body": {"content": "string"},
+                },
             ],
         }
 

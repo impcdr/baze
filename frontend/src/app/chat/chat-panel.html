@@ -55,7 +55,7 @@
           @for (prompt of prompts; track prompt) {
             <button
               type="button"
-              class="text-muted-foreground hover:bg-card hover:text-foreground rounded-xl px-3 py-2.5 text-start text-base"
+              class="bz-copy text-muted-foreground hover:bg-card hover:text-foreground rounded-xl px-3 py-2.5 text-start"
               (click)="ask(prompt)"
             >
               {{ prompt }}
@@ -76,13 +76,13 @@
           @for (message of store.messages(); track message.id) {
             @if (message.role === 'user') {
               <li class="flex justify-end" data-testid="message-user">
-                <p class="bg-card border-border max-w-[85%] rounded-xl border px-3.5 py-2 text-base leading-relaxed whitespace-pre-wrap">
+                <p class="bz-copy bg-card border-border max-w-[85%] rounded-xl border px-3.5 py-2 whitespace-pre-wrap">
                   {{ message.content }}
                 </p>
               </li>
             } @else {
               <li class="group relative" data-testid="message-assistant">
-                <div class="text-base leading-relaxed whitespace-pre-wrap">
+                <div class="bz-copy whitespace-pre-wrap">
                   @if (message.content) {
                     {{ message.content }}
                   } @else {
@@ -116,7 +116,7 @@
           #composer
           id="chat-composer"
           rows="1"
-          class="placeholder:text-muted-foreground max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-normal outline-none"
+          class="bz-copy placeholder:text-muted-foreground max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
           placeholder="Write a message"
           data-testid="composer"
           (input)="onDraft($event)"

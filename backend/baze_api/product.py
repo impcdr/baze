@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 
 import falcon
@@ -19,8 +20,20 @@ from baze_api.catalog import (
     live_path,
     preset,
 )
-from baze_api.db import apps, drafts, users
-from baze_api.http import now_ms, read_json
+from baze_api.db import apps, drafts, messages, users
+from baze_api.hermes import HermesClient, HermesError
+from baze_api.http import clean_content, new_id, now_ms, read_json
+from baze_api.runtime import public_turn
+from baze_api.proxy import InferenceError, complete_chat
+from baze_api.provisioner import (
+    PowerError,
+    begin_hosted_app,
+    boot_hosted_app,
+    build_in_container,
+    delete_shelf_app,
+    start_catalog_app,
+    stop_catalog_app,
+)
 from baze_api.settings import Settings
 
 APP_ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -80,6 +93,9 @@ def public_app(document: dict) -> dict:
     payload = {"id": document["_id"]}
     for field in PUBLIC_APP_FIELDS:
         payload[field] = document.get(field)
+    payload["runnable"] = bool((document.get("runtime") or {}).get("containerName"))
+    payload["deletable"] = not document.get("sharedBy")
+    payload["statusError"] = document.get("statusError")
     return payload
 
 
@@ -102,15 +118,23 @@ def _parse_draft_id(draft_id: str) -> str:
     return draft_id
 
 
+def _catalog(user_id: str, *, shared: bool | None = None) -> dict:
+    query: dict = {"ownerId": user_id, "kind": {"$ne": "runtime"}}
+    if shared is True:
+        query["sharedBy"] = {"$ne": None}
+    elif shared is False:
+        query["sharedBy"] = None
+    return query
+
+
 def _shelf(settings: Settings, status: str | None, *, shared: bool) -> dict:
     user = signed_in_user(settings)
-    query: dict = {"ownerId": user["_id"]}
-    query["sharedBy"] = {"$ne": None} if shared else None
+    query = _catalog(user["_id"], shared=shared)
     if status and status != "all":
         query["status"] = status
     documents = list(apps(settings).find(query).sort("sort", 1))
-    own = list(apps(settings).find({"ownerId": user["_id"], "sharedBy": None}))
-    shared_docs = list(apps(settings).find({"ownerId": user["_id"], "sharedBy": {"$ne": None}}))
+    own = list(apps(settings).find(_catalog(user["_id"], shared=False)))
+    shared_docs = list(apps(settings).find(_catalog(user["_id"], shared=True)))
     live = sum(1 for app in own if app.get("status") == "live")
     shared_count = len(shared_docs)
     page = {
@@ -256,11 +280,11 @@ class Home:
         user = signed_in_user(self.settings)
         owned = {
             document["draftKey"]: document
-            for document in apps(self.settings).find({"ownerId": user["_id"], "sharedBy": None})
+            for document in apps(self.settings).find(_catalog(user["_id"], shared=False))
             if document.get("draftKey")
         }
         featured = [public_app(owned[key]) for key in FEATURED_KEYS if key in owned]
-        own_count = apps(self.settings).count_documents({"ownerId": user["_id"], "sharedBy": None})
+        own_count = apps(self.settings).count_documents(_catalog(user["_id"], shared=False))
         resp.media = {
             **HOME_COPY,
             "seeAllLabel": f"See all {own_count}",
@@ -275,8 +299,9 @@ class Presets:
 
 
 class Shelf:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, services=None) -> None:
         self.settings = settings
+        self.services = services
 
     @_guard
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
@@ -290,6 +315,128 @@ class SharedShelf:
     @_guard
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
         resp.media = _shelf(self.settings, None, shared=True)
+
+
+class AppPower:
+    def __init__(self, settings: Settings, runner, healthy) -> None:
+        self.settings = settings
+        self.runner = runner
+        self.healthy = healthy
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str, action: str) -> None:
+        try:
+            if action == "start":
+                document = start_catalog_app(self.settings, _parse_app_id(app_id), self.runner, self.healthy)
+            elif action == "stop":
+                document = stop_catalog_app(self.settings, _parse_app_id(app_id), self.runner)
+            else:
+                raise falcon.HTTPNotFound(description="App not found")
+        except PowerError as exc:
+            if exc.code == "missing":
+                raise falcon.HTTPNotFound(description=str(exc)) from exc
+            if exc.code == "not_runnable":
+                raise falcon.HTTPConflict(description=str(exc)) from exc
+            raise falcon.HTTPServiceUnavailable(description=str(exc)) from exc
+        resp.media = public_app(document)
+
+
+class AppPrompt:
+    """Hand a prompt to the app container. The harness calls back here for the model."""
+
+    def __init__(self, settings: Settings, hermes: HermesClient) -> None:
+        self.settings = settings
+        self.hermes = hermes
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = apps(self.settings).find_one(
+            {"_id": _parse_app_id(app_id), "ownerId": user["_id"], "kind": {"$ne": "runtime"}}
+        )
+        if document is None:
+            raise falcon.HTTPNotFound(description="App not found")
+        runtime = document.get("runtime") or {}
+        port = runtime.get("harnessPort")
+        key = runtime.get("apiServerKey")
+        if document.get("status") != "live" or not isinstance(port, int) or not key:
+            raise falcon.HTTPConflict(description="This app is not ready for a prompt")
+        content = clean_content(read_json(req).get("content"))
+        session_id = (document.get("chat") or {}).get("hermesSessionId")
+        try:
+            reply, session = self.hermes.complete(
+                base_url=f"http://127.0.0.1:{port}",
+                api_key=key,
+                content=content,
+                session_id=session_id,
+            )
+        except HermesError as exc:
+            raise falcon.HTTPBadGateway(description=str(exc)) from exc
+        stamp = now_ms()
+        user_turn = {"_id": new_id(), "appId": document["_id"], "role": "user", "content": content, "createdAt": stamp}
+        assistant = {
+            "_id": new_id(),
+            "appId": document["_id"],
+            "role": "assistant",
+            "content": reply,
+            "createdAt": stamp + 1,
+        }
+        messages(self.settings).insert_many([user_turn, assistant])
+        apps(self.settings).update_one(
+            {"_id": document["_id"]},
+            {"$set": {"chat.hermesSessionId": session, "updatedAt": stamp}},
+        )
+        resp.media = {"reply": reply, "message": public_turn(assistant)}
+
+
+class AppManage:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_get(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = apps(self.settings).find_one(
+            {"_id": _parse_app_id(app_id), "ownerId": user["_id"], "kind": {"$ne": "runtime"}}
+        )
+        if document is None:
+            raise falcon.HTTPNotFound(description="App not found")
+        runtime = document.get("runtime") or {}
+        turns = messages(self.settings).find({"appId": document["_id"]}).sort("createdAt", 1)
+        resp.media = {
+            "id": document["_id"],
+            "name": document.get("name"),
+            "summary": document.get("summary"),
+            "status": document.get("status"),
+            "statusLabel": document.get("statusLabel") or "",
+            "createdAt": document.get("createdAt"),
+            "lastRunAt": runtime.get("lastStartedAt"),
+            "path": document.get("path"),
+            "color": document.get("color"),
+            "icon": document.get("icon"),
+            "runnable": bool(runtime.get("containerName")),
+            "deletable": not document.get("sharedBy"),
+            "statusError": document.get("statusError"),
+            "boxReady": bool(runtime.get("boxReady")),
+            "steps": (document.get("build") or {}).get("steps") or [],
+            "messages": [public_turn(turn) for turn in turns],
+        }
+
+
+class AppRecord:
+    def __init__(self, settings: Settings, services) -> None:
+        self.settings = settings
+        self.services = services
+
+    @_guard
+    def on_delete(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        try:
+            delete_shelf_app(self.settings, _parse_app_id(app_id), self.services.runner)
+        except PowerError as exc:
+            if exc.code == "missing":
+                raise falcon.HTTPNotFound(description=str(exc)) from exc
+            raise falcon.HTTPConflict(description=str(exc)) from exc
+        resp.status = falcon.HTTP_204
 
 
 class Workspace:
@@ -471,3 +618,327 @@ class DraftShare:
         user = signed_in_user(self.settings)
         _load_draft(self.settings, draft_id, user["_id"])
         resp.media = {"message": "The safety check link is ready to share."}
+
+
+CREATOR_ID = "creator"
+SKETCH_ID = "creator-sketch"
+SKETCH_ICONS = (
+    "lucideBookOpen",
+    "lucideBriefcase",
+    "lucideCalculator",
+    "lucideCalendarDays",
+    "lucideCamera",
+    "lucideChefHat",
+    "lucideClock",
+    "lucideCoffee",
+    "lucideDumbbell",
+    "lucideFlower2",
+    "lucideGamepad2",
+    "lucideHeart",
+    "lucideHouse",
+    "lucideLeaf",
+    "lucideList",
+    "lucideMail",
+    "lucideMapPin",
+    "lucideMusic",
+    "lucideNotebookPen",
+    "lucidePackage",
+    "lucidePawPrint",
+    "lucidePlane",
+    "lucideReceipt",
+    "lucideShoppingCart",
+    "lucideStickyNote",
+    "lucideTrendingUp",
+    "lucideUsers",
+    "lucideUtensils",
+    "lucideWallet",
+    "lucideBike",
+)
+RECEPTION = (
+    "You are the reception at baze. The person is deciding what app to make. "
+    "Help them settle the requirements in a few short turns. "
+    "Ask only what changes the app. Do not write the app, and do not mention how it is hosted. "
+    "If they name a color, remember it. Do not suggest one yourself. "
+    "When the requirements are clear, tell them they can press Make. "
+    "Reply in plain sentences, without markdown."
+)
+PLAN_REQUEST = "List 3 to 6 short steps to build this app. One step per line. No numbers and no extra text."
+SKETCH_SYSTEM = (
+    "You keep the app sketch for baze. Reply with only a JSON object with keys name, summary, icon, and color. "
+    "name is a short title. summary is one sentence about what the app does, not its color or icon. "
+    "icon is one of: "
+    + ", ".join(SKETCH_ICONS)
+    + ". color is a #hex only when the person has named a color, otherwise an empty string. "
+    "Use empty strings for anything not yet clear. "
+    "Change earlier guesses when the person changes their mind. Do not invent details."
+)
+
+
+def _ask_model(settings: Settings, services, messages: list[dict]) -> str:
+    infer = getattr(services, "infer", None) if services is not None else None
+    if infer is not None:
+        return infer(messages)
+    return complete_chat(settings, messages)
+
+
+def _creator_turns(settings: Settings) -> list[dict]:
+    query = {"appId": CREATOR_ID, "role": {"$in": ["user", "assistant"]}}
+    return list(messages(settings).find(query).sort("createdAt", 1))
+
+
+def _blank_sketch() -> dict:
+    return {"name": "", "summary": "", "icon": "", "color": ""}
+
+
+def _load_sketch(settings: Settings) -> dict:
+    document = messages(settings).find_one({"_id": SKETCH_ID, "role": "sketch"}) or {}
+    icon = document.get("icon") or ""
+    if icon not in SKETCH_ICONS:
+        icon = ""
+    return {
+        "name": (document.get("name") or "")[:48],
+        "summary": (document.get("summary") or "")[:140],
+        "icon": icon,
+        "color": _hex_color(document.get("color")),
+    }
+
+
+def _save_sketch(settings: Settings, sketch: dict) -> None:
+    messages(settings).update_one(
+        {"_id": SKETCH_ID},
+        {
+            "$set": {
+                "appId": CREATOR_ID,
+                "role": "sketch",
+                "name": sketch["name"],
+                "summary": sketch["summary"],
+                "icon": sketch["icon"],
+                "color": sketch["color"],
+                "content": "",
+                "createdAt": now_ms(),
+            }
+        },
+        upsert=True,
+    )
+
+
+def _parse_sketch(text: str) -> dict | None:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        data = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    name = data.get("name") if isinstance(data.get("name"), str) else ""
+    summary = data.get("summary") if isinstance(data.get("summary"), str) else ""
+    icon = data.get("icon") if isinstance(data.get("icon"), str) else ""
+    icon = icon.strip()
+    if icon not in SKETCH_ICONS:
+        icon = ""
+    name = " ".join(name.split())[:48]
+    if name.lower() in {"unnamed", "untitled", "app"}:
+        name = ""
+    return {
+        "name": name,
+        "summary": " ".join(summary.split())[:140],
+        "icon": icon,
+        "color": _hex_color(data.get("color")),
+    }
+
+
+def _hex_color(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", text):
+        return text.lower()
+    return ""
+
+
+def _refresh_sketch(settings: Settings, services, turns: list[dict]) -> dict:
+    history = [{"role": "system", "content": SKETCH_SYSTEM}]
+    history.extend({"role": turn["role"], "content": turn["content"]} for turn in turns)
+    history.append({"role": "user", "content": "Update the app sketch."})
+    try:
+        parsed = _parse_sketch(_ask_model(settings, services, history))
+    except InferenceError:
+        return _load_sketch(settings)
+    if parsed is None:
+        return _load_sketch(settings)
+    _save_sketch(settings, parsed)
+    return parsed
+
+
+def _creator_media(settings: Settings) -> dict:
+    return {
+        "messages": [public_turn(turn) for turn in _creator_turns(settings)],
+        "sketch": _load_sketch(settings),
+    }
+
+
+def _plan_lines(text: str) -> list[str]:
+    lines = []
+    for raw in text.splitlines():
+        cleaned = raw.strip().lstrip("-*").strip()
+        cleaned = cleaned.lstrip("0123456789.").strip()
+        if cleaned:
+            lines.append(cleaned[:80])
+    return lines[:6] or ["Write the app", "Save it in the box"]
+
+
+def _provision_steps(plan: list[str]) -> list[dict]:
+    steps = [
+        {"id": "create", "label": "Creating the container", "state": "waiting"},
+        {"id": "start", "label": "Starting the box", "state": "waiting"},
+        {"id": "harness", "label": "Opening the harness", "state": "waiting"},
+    ]
+    steps.extend({"id": f"plan-{index}", "label": label, "state": "waiting"} for index, label in enumerate(plan))
+    return steps
+
+
+class Creator:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
+        signed_in_user(self.settings)
+        resp.media = _creator_media(self.settings)
+
+
+class CreatorMessages:
+    def __init__(self, settings: Settings, services) -> None:
+        self.settings = settings
+        self.services = services
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response) -> None:
+        signed_in_user(self.settings)
+        content = clean_content(read_json(req).get("content"))
+        prior = _creator_turns(self.settings)
+        user_turn = {"_id": new_id(), "appId": CREATOR_ID, "role": "user", "content": content, "createdAt": now_ms()}
+        messages(self.settings).insert_one(user_turn)
+        history = [{"role": "system", "content": RECEPTION}]
+        history.extend({"role": turn["role"], "content": turn["content"]} for turn in prior)
+        history.append({"role": "user", "content": content})
+        try:
+            reply = _ask_model(self.settings, self.services, history)
+        except InferenceError as exc:
+            messages(self.settings).delete_one({"_id": user_turn["_id"]})
+            raise falcon.HTTPBadGateway(description=str(exc)) from exc
+        messages(self.settings).insert_one(
+            {"_id": new_id(), "appId": CREATOR_ID, "role": "assistant", "content": reply, "createdAt": now_ms()}
+        )
+        _refresh_sketch(self.settings, self.services, _creator_turns(self.settings))
+        resp.media = _creator_media(self.settings)
+
+
+class CreatorReset:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response) -> None:
+        signed_in_user(self.settings)
+        messages(self.settings).delete_many({"appId": CREATOR_ID})
+        resp.media = _creator_media(self.settings)
+
+
+class CreatorMake:
+    def __init__(self, settings: Settings, services) -> None:
+        self.settings = settings
+        self.services = services
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response) -> None:
+        if self.services is None:
+            raise falcon.HTTPServiceUnavailable(description="Apps cannot be created right now")
+        user = signed_in_user(self.settings)
+        turns = _creator_turns(self.settings)
+        prompt = next((turn["content"] for turn in turns if turn.get("role") == "user"), "")
+        if not prompt:
+            raise falcon.HTTPBadRequest(description="Tell the reception what to make first")
+        plan_messages = [
+            {"role": "system", "content": "You write build plans. Reply with one short step per line and nothing else."},
+            *({"role": turn["role"], "content": turn["content"]} for turn in turns),
+            {"role": "user", "content": PLAN_REQUEST},
+        ]
+        try:
+            plan = _plan_lines(_ask_model(self.settings, self.services, plan_messages))
+        except InferenceError as exc:
+            raise falcon.HTTPBadGateway(description=str(exc)) from exc
+        document = begin_hosted_app(self.settings, user["_id"], prompt)
+        app_id = document["_id"]
+        sketch = _load_sketch(self.settings)
+        named = {}
+        if sketch["name"]:
+            named["name"] = sketch["name"]
+        if sketch["summary"]:
+            named["summary"] = sketch["summary"]
+            named["detail"] = sketch["summary"]
+        if sketch["icon"]:
+            named["icon"] = sketch["icon"]
+        if sketch["color"]:
+            named["color"] = sketch["color"]
+        if named:
+            apps(self.settings).update_one({"_id": app_id}, {"$set": named})
+        stamp = now_ms()
+        copies = [
+            {
+                "_id": new_id(),
+                "appId": app_id,
+                "role": turn["role"],
+                "content": turn["content"],
+                "createdAt": stamp + index,
+            }
+            for index, turn in enumerate(turns)
+        ]
+        if copies:
+            messages(self.settings).insert_many(copies)
+        messages(self.settings).delete_many({"appId": CREATOR_ID})
+        steps = _provision_steps(plan)
+        apps(self.settings).update_one({"_id": app_id}, {"$set": {"build.steps": steps, "prompt": prompt}})
+        self.services.spawn(
+            lambda app_id=app_id: boot_hosted_app(
+                self.settings, app_id, self.services.runner, self.services.healthy
+            )
+        )
+        resp.status = falcon.HTTP_201
+        resp.media = {"id": app_id, "steps": steps, "boxReady": False}
+
+
+class AppBuild:
+    def __init__(self, settings: Settings, services) -> None:
+        self.settings = settings
+        self.services = services
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        signed_in_user(self.settings)
+        app_id = _parse_app_id(app_id)
+        document = apps(self.settings).find_one({"_id": app_id, "kind": {"$ne": "runtime"}})
+        if document is None:
+            raise falcon.HTTPNotFound(description="App not found")
+        if not (document.get("runtime") or {}).get("boxReady"):
+            raise falcon.HTTPConflict(description="The container is not ready")
+        if document.get("status") != "live":
+            claimed = apps(self.settings).update_one(
+                {"_id": app_id, "runtime.buildStarted": {"$ne": True}},
+                {"$set": {"runtime.buildStarted": True, "updatedAt": now_ms()}},
+            )
+            if claimed.modified_count and self.services is not None:
+                self.services.spawn(
+                    lambda app_id=app_id: build_in_container(
+                        self.settings,
+                        app_id,
+                        self.services.runner,
+                        self.services.hermes,
+                        self.services.healthy,
+                    )
+                )
+        resp.status = falcon.HTTP_202
+        resp.media = {"id": app_id}

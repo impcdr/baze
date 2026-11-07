@@ -1,6 +1,6 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import type { Account, Draft, HomePayload, Preset, ShelfPayload, Workspace } from './models';
+import type { Account, AppManage, AppStep, CreatorThread, Draft, HomePayload, Preset, ShelfApp, ShelfPayload, Workspace } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class BazeApi {
@@ -21,6 +21,30 @@ export class BazeApi {
   apps(status = 'all') {
     const params = new HttpParams().set('status', status);
     return this.http.get<ShelfPayload>('/api/apps', { params });
+  }
+
+  creator() {
+    return this.http.get<CreatorThread>('/api/creator');
+  }
+
+  creatorMessage(content: string) {
+    return this.http.post<CreatorThread>('/api/creator/messages', { content });
+  }
+
+  resetCreator() {
+    return this.http.post<CreatorThread>('/api/creator/reset', {});
+  }
+
+  makeCreator() {
+    return this.http.post<{ id: string; steps: AppStep[] }>('/api/creator/make', {});
+  }
+
+  build(id: string) {
+    return this.http.post<{ id: string }>(`/api/apps/${id}/build`, {});
+  }
+
+  deleteApp(id: string) {
+    return this.http.delete(`/api/apps/${id}`, { responseType: 'text' });
   }
 
   shared() {
@@ -53,5 +77,17 @@ export class BazeApi {
 
   workspace(slug: string) {
     return this.http.get<Workspace>(`/api/apps/${slug}/workspace`);
+  }
+
+  power(id: string, action: 'start' | 'stop') {
+    return this.http.post<ShelfApp>(`/api/apps/${id}/power/${action}`, {});
+  }
+
+  manage(id: string) {
+    return this.http.get<AppManage>(`/api/apps/${id}/manage`);
+  }
+
+  prompt(id: string, content: string) {
+    return this.http.post<{ reply: string }>(`/api/apps/${id}/prompt`, { content });
   }
 }

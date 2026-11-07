@@ -26,7 +26,7 @@
     } @else {
       <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
         @for (app of shelf.apps; track app.id) {
-          <bz-app-card [app]="app" />
+          <bz-app-card [app]="app" (removed)="reload()" />
         }
       </div>
 
@@ -38,7 +38,7 @@
           </div>
           <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
             @for (app of shelf.shared; track app.id) {
-              <bz-app-card [app]="app" />
+              <bz-app-card [app]="app" (removed)="reload()" />
             }
           </div>
         </div>

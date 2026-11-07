@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
+import { toast } from '@spartan-ng/brain/sonner';
+import { startWith, Subject, switchMap } from 'rxjs';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { BazeApi } from '../api/baze-api';
 import { AppCard } from './app-card';
@@ -19,8 +21,9 @@ export class HomePage {
   private readonly api = inject(BazeApi);
   private readonly router = inject(Router);
   private readonly typed = signal<string | null>(null);
+  private readonly loads = new Subject<void>();
 
-  protected readonly home = toSignal(this.api.home());
+  protected readonly home = toSignal(this.loads.pipe(startWith(undefined), switchMap(() => this.api.home())));
   protected readonly prompt = computed(() => this.typed() ?? this.home()?.prompt ?? '');
   protected readonly sending = signal(false);
 
@@ -36,11 +39,12 @@ export class HomePage {
     this.start(this.prompt().trim());
   }
 
+  protected reload(): void {
+    this.loads.next();
+  }
+
   private start(prompt: string): void {
-    if (!prompt || this.sending()) return;
-    this.sending.set(true);
-    this.api.createDraft(prompt).subscribe((draft) => {
-      void this.router.navigate(['/make', draft.id]);
-    });
+    if (!prompt) return;
+    void this.router.navigate(['/creator'], { state: { prompt } });
   }
 }

@@ -1,3 +1,5 @@
+import re
+
 import falcon
 from falcon import testing
 
@@ -90,7 +92,9 @@ def test_hosted_frontend_and_chat_route(client):
     assert chat.status_code == 200
     assert chat.content == home.content
 
-    script = http.simulate_get("/main.js")
+    match = re.search(br'src="([^"]+\.js)"', home.content)
+    assert match is not None
+    script = http.simulate_get("/" + match.group(1).decode())
     assert script.status_code == 200
     assert "javascript" in script.headers["content-type"]
 

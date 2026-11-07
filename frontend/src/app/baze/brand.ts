@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import { NgIcon } from '@ng-icons/core';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
+import { appFaviconHref } from './app-favicon';
 
 @Component({
   selector: 'bz-logo',
@@ -69,18 +69,14 @@ export class BazeAppIcon {
 
 @Component({
   selector: 'bz-app-tile',
-  imports: [NgIcon],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     class: 'bz-app-tile',
-    role: 'img',
-    '[attr.aria-label]': 'label()',
-    '[style.background]': 'color()',
     '[style.width.px]': 'size()',
     '[style.height.px]': 'size()',
-    '[style.border-radius.px]': 'radius()',
+    '[style.background]': 'color()',
   },
-  template: `<ng-icon [name]="icon()" [style.font-size.px]="iconSize()" />`,
+  template: `<img [src]="href()" [alt]="label()" [width]="size()" [height]="size()" />`,
 })
 export class BazeAppTile {
   /** The app's own colour. */
@@ -89,8 +85,7 @@ export class BazeAppTile {
   readonly icon = input.required<string>();
   readonly size = input(56);
   readonly label = input('App');
-  protected readonly radius = computed(() => Math.round(this.size() * 0.36));
-  protected readonly iconSize = computed(() => Math.round(this.size() * 0.46));
+  protected readonly href = computed(() => appFaviconHref(this.color(), this.icon()));
 }
 
 @Component({
@@ -200,6 +195,21 @@ export class BazeGoLive {
   readonly tiles = [1, 2, 3, 4, 5, 6, 7, 8];
 }
 
+@Component({
+  selector: 'bz-empty-shelf',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { class: 'bz-empty-shelf' },
+  template: `
+    <svg width="220" height="110" viewBox="0 0 220 110" aria-hidden="true">
+      <rect class="shelf" x="10" y="88" width="200" height="12" rx="6"></rect>
+      <rect class="ghost" x="84" y="30" width="52" height="52" rx="16"></rect>
+      <g class="plus"><path d="M110 46 V66 M100 56 H120"></path></g>
+    </svg>
+    <p class="bz-empty-shelf__title">What should we make today?</p>
+  `,
+})
+export class BazeEmptyShelf {}
+
 export const BazeBrandImports = [
   BazeLogo,
   BazeLogoReveal,
@@ -211,4 +221,5 @@ export const BazeBrandImports = [
   BazeCheckDraw,
   BazeLivePulse,
   BazeGoLive,
+  BazeEmptyShelf,
 ] as const;

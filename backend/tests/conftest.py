@@ -16,9 +16,13 @@ def settings():
     return load_settings()
 
 
+@pytest.fixture(autouse=True)
+def clean_db(settings):
+    database = get_db(settings)
+    for name in ("conversations", "users", "apps", "drafts", "messages"):
+        database[name].delete_many({})
+
+
 @pytest.fixture()
 def client(settings):
-    database = get_db(settings)
-    for name in ("conversations", "users", "apps", "drafts"):
-        database[name].delete_many({})
     return create_app(settings)

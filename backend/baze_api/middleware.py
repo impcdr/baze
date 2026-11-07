@@ -9,7 +9,7 @@ import falcon
 from baze_api.settings import Settings
 
 PUBLIC_PATHS = {"/api/health", "/api"}
-PUBLIC_PREFIXES = ("/api/account", "/api/home", "/api/presets", "/api/apps", "/api/shared", "/api/drafts")
+PUBLIC_PREFIXES = ("/api/account", "/api/home", "/api/presets", "/api/apps", "/api/shared", "/api/drafts", "/api/creator")
 
 
 class CorsMiddleware:

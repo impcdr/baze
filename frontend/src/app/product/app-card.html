@@ -1,16 +1,16 @@
 <ng-template #tile>
-  <bz-app-tile [color]="app().color" [icon]="app().icon" [size]="48" [label]="app().name" />
+  <bz-app-tile [color]="shown().color" [icon]="shown().icon" [size]="48" [label]="shown().name" />
 </ng-template>
 
 <div class="bg-card relative flex h-full flex-col gap-3 overflow-hidden rounded-xl p-4">
   <div class="flex min-w-0 items-start gap-3">
-    @if (app().path; as path) {
-      @if (app().external) {
-        <a class="bz-app-open shrink-0" [href]="path" target="_blank" rel="noopener" [attr.aria-label]="'Open ' + app().name">
+    @if (shown().path; as path) {
+      @if (shown().external) {
+        <a class="bz-app-open shrink-0" [href]="path" target="_blank" rel="noopener" [attr.aria-label]="'Open ' + shown().name">
           <ng-container *ngTemplateOutlet="tile" />
         </a>
       } @else {
-        <a class="bz-app-open shrink-0" [routerLink]="path" [attr.aria-label]="'Open ' + app().name">
+        <a class="bz-app-open shrink-0" [routerLink]="path" [attr.aria-label]="'Open ' + shown().name">
           <ng-container *ngTemplateOutlet="tile" />
         </a>
       }
@@ -18,8 +18,8 @@
       <ng-container *ngTemplateOutlet="tile" />
     }
     <span class="flex min-w-0 flex-1 flex-col gap-1 pe-8">
-      <span class="truncate font-display text-lg leading-tight">{{ app().name }}</span>
-      <span class="text-muted-foreground line-clamp-2 min-h-10 text-sm leading-snug">{{ app().summary }}</span>
+      <span class="truncate font-display text-lg leading-tight">{{ shown().name }}</span>
+      <span class="bz-copy text-muted-foreground line-clamp-2 min-h-10">{{ shown().summary }}</span>
     </span>
   </div>
 
@@ -37,7 +37,7 @@
     class="bz-app-gear absolute top-3 right-3"
     [hlmDropdownMenuTrigger]="appMenu"
     align="end"
-    [attr.aria-label]="'Actions for ' + app().name"
+    [attr.aria-label]="'Actions for ' + shown().name"
   >
     <ng-icon name="lucideSettings" />
   </button>
@@ -45,8 +45,42 @@
 
 <ng-template #appMenu>
   <div hlmDropdownMenu class="w-44">
-    <button hlmDropdownMenuItem type="button">Manage app</button>
-    <button hlmDropdownMenuItem type="button">Start app</button>
-    <button hlmDropdownMenuItem type="button">Stop app</button>
+    <button hlmDropdownMenuItem type="button" (click)="manage()">Manage app</button>
+    <button
+      hlmDropdownMenuItem
+      type="button"
+      [disabled]="!shown().runnable || shown().status === 'live' || pending()"
+      (click)="start()"
+    >
+      {{ pending() === 'start' ? 'Starting…' : 'Start app' }}
+    </button>
+    <button
+      hlmDropdownMenuItem
+      type="button"
+      [disabled]="!shown().runnable || shown().status !== 'live' || pending()"
+      (click)="stop()"
+    >
+      {{ pending() === 'stop' ? 'Stopping…' : 'Stop app' }}
+    </button>
+    @if (shown().deletable) {
+      <div hlmDropdownMenuSeparator></div>
+      <button hlmDropdownMenuItem type="button" variant="destructive" [hlmDialogTriggerFor]="deleteDialog">
+        <ng-icon name="lucideTrash2" />
+        Delete app
+      </button>
+    }
   </div>
 </ng-template>
+
+<hlm-dialog #deleteDialog>
+  <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+    <div hlmDialogHeader>
+      <h3 hlmDialogTitle>Delete {{ shown().name }}?</h3>
+      <p hlmDialogDescription>The container and the app go away.</p>
+    </div>
+    <div hlmDialogFooter>
+      <button hlmBtn type="button" variant="outline" hlmDialogClose>Cancel</button>
+      <button hlmBtn type="button" variant="destructive" (click)="remove(); deleteDialog.close()">Delete app</button>
+    </div>
+  </hlm-dialog-content>
+</hlm-dialog>

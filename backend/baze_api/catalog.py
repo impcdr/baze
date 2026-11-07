@@ -28,7 +28,9 @@ APP_IDS = {
     "menu": MENU_ID,
 }
 
-FEATURED_KEYS = ["studio", "watchlist", "stock", "shifts"]
+FEATURED_KEYS = ["studio", "watchlist", "followups"]
+MANAGED_APP_IDS = [STUDIO_ID, WATCHLIST_ID, FOLLOWUPS_ID]
+RETIRED_APP_IDS = [STOCK_ID, SHIFTS_ID, EXPENSES_ID, HOLIDAY_ID, MENU_ID]
 
 PRESETS = [
     {"id": "ocean", "label": "Ocean", "color": "#2563eb"},
@@ -68,9 +70,6 @@ HOME_COPY = {
 
 PROMPT_DRAFTS = [
     {"match": "invoice", "id": "studio"},
-    {"match": "shift", "id": "shifts"},
-    {"match": "café", "id": "shifts"},
-    {"match": "cafe", "id": "shifts"},
 ]
 
 SHELF_COPY = {
@@ -116,7 +115,6 @@ def _app(
     is_new: bool = False,
     badge: str | None = None,
     progress: int | None = None,
-    workspace: dict | None = None,
 ) -> dict:
     look = preset(preset_id)
     document = {
@@ -138,116 +136,10 @@ def _app(
         "path": path,
         "external": external,
         "sharedBy": shared_by,
-        "workspace": workspace,
     }
     if not shared_by:
         document["draftKey"] = key
     return document
-
-
-def _empty_panel(title: str, empty: str) -> dict:
-    return {
-        "title": title,
-        "empty": empty,
-        "stats": [],
-        "columns": [],
-        "rows": [],
-        "chartTitle": "",
-        "chartStart": "",
-        "chartEnd": "",
-        "bars": [],
-    }
-
-
-def studio_workspace() -> dict:
-    color = preset("forest")["color"]
-    return {
-        "slug": "studio-invoices",
-        "name": "Studio Invoices",
-        "preset": "forest",
-        "color": color,
-        "icon": "lucideReceipt",
-        "primaryAction": "New invoice",
-        "secondaryAction": "Export",
-        "madeWithLabel": "Made with baze · safety check",
-        "madeWithPath": "/ready/studio",
-        "sections": [
-            {
-                "id": "invoices",
-                "label": "Invoices",
-                "panel": {
-                    "title": "Invoices",
-                    "empty": None,
-                    "stats": [
-                        {"label": "Waiting to be paid", "value": "€8,240", "note": None},
-                        {"label": "Paid in November", "value": "€14,900", "note": "+18% on October"},
-                        {"label": "Late", "value": "2 clients", "note": None},
-                        {"label": "Average time to pay", "value": "11 days", "note": None},
-                    ],
-                    "columns": ["No.", "Client", "Amount", "Status"],
-                    "rows": [
-                        {
-                            "id": "0141",
-                            "cells": ["#0141", "Nordlicht Café", "€2,400"],
-                            "badge": None,
-                            "action": "12 days late · Remind",
-                        },
-                        {
-                            "id": "0140",
-                            "cells": ["#0140", "Weber & Söhne", "€980"],
-                            "badge": {"label": "5 days late", "tone": "warning"},
-                            "action": None,
-                        },
-                        {
-                            "id": "0139",
-                            "cells": ["#0139", "Hofmann Architects", "€4,180"],
-                            "badge": {"label": "Due in 6 days", "tone": "muted"},
-                            "action": None,
-                        },
-                        {
-                            "id": "0138",
-                            "cells": ["#0138", "Saar Bikes", "€1,660"],
-                            "badge": {"label": "Paid 2 Nov", "tone": "success"},
-                            "action": None,
-                        },
-                        {
-                            "id": "0137",
-                            "cells": ["#0137", "Kaffeehaus Lindner", "€720"],
-                            "badge": {"label": "Paid 30 Oct", "tone": "success"},
-                            "action": None,
-                        },
-                    ],
-                    "chartTitle": "Paid per week",
-                    "chartStart": "7 weeks ago",
-                    "chartEnd": "This week · €4,100",
-                    "bars": [
-                        {"height": 42, "current": False},
-                        {"height": 55, "current": False},
-                        {"height": 38, "current": False},
-                        {"height": 64, "current": False},
-                        {"height": 58, "current": False},
-                        {"height": 76, "current": False},
-                        {"height": 92, "current": True},
-                    ],
-                },
-            },
-            {
-                "id": "clients",
-                "label": "Clients",
-                "panel": _empty_panel("Clients", "The people on your invoices show up here."),
-            },
-            {
-                "id": "reminders",
-                "label": "Reminders",
-                "panel": _empty_panel("Reminders", "Late invoices get a reminder from your email."),
-            },
-            {
-                "id": "settings",
-                "label": "Settings",
-                "panel": _empty_panel("Settings", "Reminders come from hello@lindner-studio.de."),
-            },
-        ],
-    }
 
 
 def catalog_apps() -> list[dict]:
@@ -258,12 +150,11 @@ def catalog_apps() -> list[dict]:
             slug="studio-invoices",
             name="Studio Invoices",
             summary="Send invoices and remind late clients.",
-            status="live",
-            status_label="Live",
+            status="stopped",
+            status_label="",
             labels=[
                 {"text": "New", "tone": "secondary"},
                 {"text": "Take a look", "tone": "warning"},
-                {"text": "Live", "tone": "success"},
             ],
             preset_id="forest",
             icon="lucideReceipt",
@@ -271,7 +162,6 @@ def catalog_apps() -> list[dict]:
             external=True,
             is_new=True,
             badge="New",
-            workspace=studio_workspace(),
         ),
         _app(
             key="watchlist",
@@ -279,9 +169,9 @@ def catalog_apps() -> list[dict]:
             slug="stock-watchlist",
             name="Stock watchlist",
             summary="Price alerts when a stock drops.",
-            status="live",
-            status_label="Live",
-            labels=[{"text": "Live", "tone": "success"}],
+            status="stopped",
+            status_label="",
+            labels=[],
             preset_id="graphite",
             icon="lucideTrendingUp",
             path=live_path(WATCHLIST_ID),
@@ -293,86 +183,13 @@ def catalog_apps() -> list[dict]:
             slug="client-follow-ups",
             name="Client follow-ups",
             summary="The client calls you still need to make.",
-            status="live",
-            status_label="Live",
-            labels=[{"text": "Live", "tone": "success"}],
+            status="stopped",
+            status_label="",
+            labels=[],
             preset_id="ocean",
             icon="lucideUsers",
             path=live_path(FOLLOWUPS_ID),
             external=True,
-        ),
-        _app(
-            key="stock",
-            sort=3,
-            slug="stock-room",
-            name="Stock room",
-            summary="Counts for the studio supplies.",
-            status="attention",
-            status_label="Take a look",
-            labels=[{"text": "Take a look", "tone": "warning"}],
-            preset_id="plum",
-            icon="lucidePackage",
-            path=live_path(STOCK_ID),
-            external=True,
-        ),
-        _app(
-            key="shifts",
-            sort=4,
-            slug="cafe-shifts",
-            name="Café shifts",
-            summary="Staff shifts so the café week is covered.",
-            status="building",
-            status_label="Being made",
-            labels=[{"text": "Being made", "tone": "secondary"}],
-            preset_id="sunset",
-            icon="lucideCalendarDays",
-            path="/building/shifts",
-            external=False,
-            progress=68,
-        ),
-        _app(
-            key="expenses",
-            sort=5,
-            slug="team-expenses",
-            name="Team expenses",
-            summary="Log what the team spends.",
-            status="paused",
-            status_label="Paused",
-            labels=[{"text": "Paused", "tone": "outline"}],
-            preset_id="rose",
-            icon="lucideWallet",
-            path=live_path(EXPENSES_ID),
-            external=True,
-        ),
-        _app(
-            key="holiday",
-            sort=6,
-            slug="holiday-cover",
-            name="Holiday cover",
-            summary="Who covers the studio while people are away.",
-            status="live",
-            status_label="Live",
-            labels=[{"text": "Live", "tone": "success"}],
-            preset_id="ocean",
-            icon="lucideCalendarDays",
-            path=live_path(HOLIDAY_ID),
-            external=True,
-            shared_by="Nico Park",
-        ),
-        _app(
-            key="menu",
-            sort=7,
-            slug="menu-board",
-            name="Menu board",
-            summary="The café menu, in one place.",
-            status="live",
-            status_label="Live",
-            labels=[{"text": "Live", "tone": "success"}],
-            preset_id="rose",
-            icon="lucideUtensils",
-            path=live_path(MENU_ID),
-            external=True,
-            shared_by="Jules Berg",
         ),
     ]
 
@@ -552,4 +369,4 @@ def shifts_draft() -> dict:
 
 
 def catalog_drafts() -> list[dict]:
-    return [studio_draft(), shifts_draft()]
+    return [studio_draft()]

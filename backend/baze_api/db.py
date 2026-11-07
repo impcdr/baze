@@ -31,7 +31,10 @@ def get_client(settings: Settings) -> MongoClient:
         database.apps.create_index([("ownerId", 1), ("sort", 1)])
         database.apps.create_index("slug", unique=True)
         database.apps.create_index("draftKey", unique=True, sparse=True)
+        database.apps.create_index("runtime.proxyToken", unique=True, sparse=True)
+        database.apps.create_index("runtime.containerName", unique=True, sparse=True)
         database.drafts.create_index([("ownerId", 1), ("updatedAt", -1)])
+        database.messages.create_index([("appId", 1), ("createdAt", 1)])
     return _client
 
 
@@ -53,3 +56,7 @@ def apps(settings: Settings) -> Collection:
 
 def drafts(settings: Settings) -> Collection:
     return get_db(settings).drafts
+
+
+def messages(settings: Settings) -> Collection:
+    return get_db(settings).messages

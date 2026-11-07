@@ -1,0 +1,125 @@
+@if (app(); as page) {
+  <div class="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
+    <a routerLink="/apps" class="text-muted-foreground inline-flex items-center gap-1 py-3 text-sm font-medium">
+      <ng-icon name="lucideArrowLeft" />
+      My apps
+    </a>
+
+    <header class="flex items-start gap-3 pb-4">
+      <bz-app-tile [color]="page.color" [icon]="page.icon" [size]="48" [label]="page.name" />
+      <div class="min-w-0">
+        @if (page.path) {
+          <a
+            class="font-display block truncate text-2xl leading-tight no-underline decoration-1 underline-offset-4 hover:underline"
+            [href]="page.path"
+            target="_blank"
+            rel="noopener"
+          >{{ page.name }}</a>
+        } @else {
+          <h1 class="font-display truncate text-2xl leading-tight">{{ page.name }}</h1>
+        }
+        <p class="bz-copy text-muted-foreground mt-1">{{ page.summary }}</p>
+      </div>
+      <hlm-switch
+        class="ms-auto self-center"
+        [checked]="running()"
+        [disabled]="!page.runnable || powering() || page.status === 'building'"
+        [aria-label]="running() ? 'Stop ' + page.name : 'Start ' + page.name"
+        (checkedChange)="toggle($event)"
+      />
+    </header>
+
+    <section class="bg-card mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl" aria-label="Adjust this app">
+      <dl class="grid gap-3 border-b px-4 py-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-start">
+        <div>
+          <dt class="text-muted-foreground text-xs font-medium">Status</dt>
+          <dd class="mt-1">
+            <span hlmBadge [variant]="page.status === 'live' ? 'success' : page.status === 'error' ? 'warning' : 'outline'">
+              {{ page.status === 'live' ? 'Live' : page.status === 'building' ? 'Being made' : page.status === 'error' ? 'Didn’t start' : 'Off' }}
+            </span>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-muted-foreground text-xs font-medium">Created</dt>
+          <dd class="mt-1 text-sm">{{ when(page.createdAt, 'Unknown') }}</dd>
+        </div>
+        <div>
+          <dt class="text-muted-foreground text-xs font-medium">Last run</dt>
+          <dd class="mt-1 text-sm">{{ when(page.lastRunAt) }}</dd>
+        </div>
+        @if (page.deletable) {
+          <div class="flex sm:justify-end">
+            <button hlmBtn type="button" variant="destructive" size="sm" [hlmDialogTriggerFor]="deleteDialog">
+              <ng-icon name="lucideTrash2" />
+              Delete app
+            </button>
+            <hlm-dialog #deleteDialog>
+              <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+                <div hlmDialogHeader>
+                  <h3 hlmDialogTitle>Delete {{ page.name }}?</h3>
+                  <p hlmDialogDescription>The container and the app go away.</p>
+                </div>
+                <div hlmDialogFooter>
+                  <button hlmBtn type="button" variant="outline" hlmDialogClose>Cancel</button>
+                  <button hlmBtn type="button" variant="destructive" (click)="remove()">Delete app</button>
+                </div>
+              </hlm-dialog-content>
+            </hlm-dialog>
+          </div>
+        }
+      </dl>
+
+      <div #thread class="min-h-0 flex-1 overflow-y-auto px-4 py-4" role="log" aria-label="Adjustments">
+        @if (page.messages.length === 0 && page.steps.length === 0 && !sending()) {
+          <p class="bz-copy text-muted-foreground">Tell this app what to change.</p>
+        }
+        <ol class="flex flex-col gap-3">
+          @for (message of page.messages; track message.id) {
+            <li class="flex" [class.justify-end]="message.role === 'user'">
+              <p class="bz-copy bg-background max-w-[85%] rounded-xl px-3.5 py-2 whitespace-pre-wrap">{{ message.content }}</p>
+            </li>
+          }
+          @for (step of page.steps; track step.id) {
+            <li class="flex items-center gap-2">
+              @if (step.state === 'done') {
+                <ng-icon name="lucideCheck" class="text-success size-3.5" />
+              } @else {
+                <ng-icon name="lucideLoaderCircle" class="size-3.5 animate-spin" />
+              }
+              <span class="bz-copy">{{ step.label }}</span>
+            </li>
+          }
+          @if (sending()) {
+            <li><span class="bz-copy shimmer text-muted-foreground">Thinking…</span></li>
+          }
+        </ol>
+      </div>
+
+      <form class="px-4 pt-1 pb-4" (submit)="$event.preventDefault(); send()">
+        <div class="flex items-end gap-2">
+          <label class="sr-only" for="manage-composer">Change to ask for</label>
+          <textarea
+            id="manage-composer"
+            rows="1"
+            class="bz-copy placeholder:text-muted-foreground bg-background max-h-40 min-h-10 flex-1 resize-none rounded-xl px-3.5 py-2 outline-none"
+            placeholder="Tell me what to change…"
+            [value]="draft()"
+            [disabled]="page.status !== 'live' || sending()"
+            (input)="onDraft($event)"
+            (keydown)="onKeydown($event)"
+          ></textarea>
+          <button hlmBtn type="submit" size="icon" aria-label="Send" [disabled]="page.status !== 'live' || sending() || !draft().trim()">
+            <ng-icon name="lucideArrowUp" />
+          </button>
+        </div>
+        @if (page.status === 'building') {
+          <p class="bz-copy text-muted-foreground mt-2">The app is being made.</p>
+        } @else if (page.status === 'error' && page.statusError) {
+          <p class="bz-copy text-muted-foreground mt-2">{{ page.statusError }}</p>
+        } @else if (page.status !== 'live') {
+          <p class="bz-copy text-muted-foreground mt-2">Start the app before asking for a change.</p>
+        }
+      </form>
+    </section>
+  </div>
+}

@@ -1,0 +1,91 @@
+<h1 class="sr-only">Creator</h1>
+@if (settled()) {
+  <section class="bz-reception" [class.is-chat]="chatting()" aria-label="Reception">
+    @if (shelfOn()) {
+      <div class="bz-reception__welcome">
+        @for (tick of [take()]; track tick) {
+          <bz-empty-shelf />
+        }
+      </div>
+    }
+    @if (chatting()) {
+      <div class="bz-reception__sketch">
+        <bz-app-tile
+          [class.is-blank]="!sketch().icon"
+          [color]="sketchColor()"
+          [icon]="sketchIcon()"
+          [size]="48"
+          [label]="sketch().name || 'Unnamed'"
+        />
+        <div class="min-w-0 flex-1">
+          <p class="truncate font-display text-lg leading-tight" [class.text-muted-foreground]="!sketch().name">
+            {{ sketch().name || 'Unnamed' }}
+          </p>
+          <p class="bz-copy text-muted-foreground truncate">{{ sketch().summary || 'Not described yet' }}</p>
+        </div>
+        <div class="ms-auto flex shrink-0 items-center gap-2">
+          <button hlmBtn type="button" variant="ghost" [disabled]="sending() || making()" (click)="restart()">Start again</button>
+          <button hlmBtn type="button" [disabled]="!ready() || sending() || making()" (click)="make()">
+            @if (making()) {
+              <ng-icon name="lucideLoaderCircle" class="animate-spin" />
+            }
+            Make
+          </button>
+        </div>
+      </div>
+    }
+    <div class="bz-reception__log">
+      <div #thread class="bz-reception__log-inner" role="log" aria-label="Requirements">
+        <ol class="flex flex-col gap-3 px-4 py-4">
+          @for (message of messages(); track message.id) {
+            <li class="flex" [class.justify-end]="message.role === 'user'">
+              <p class="bz-copy bg-background max-w-[85%] rounded-xl px-3.5 py-2 whitespace-pre-wrap">{{ message.content }}</p>
+            </li>
+          }
+          @for (step of steps(); track step.id) {
+            <li class="flex items-center gap-2">
+              @if (step.state === 'done') {
+                <ng-icon name="lucideCheck" class="text-success size-3.5" />
+              } @else {
+                <ng-icon name="lucideLoaderCircle" class="size-3.5 animate-spin" />
+              }
+              <span class="bz-copy">{{ step.label }}</span>
+            </li>
+          }
+          @if (sending()) {
+            <li><span class="bz-copy shimmer text-muted-foreground">Thinking…</span></li>
+          }
+        </ol>
+      </div>
+    </div>
+
+    <form class="bz-reception__form" (submit)="$event.preventDefault(); send()">
+      <div class="flex gap-1" [class.items-center]="!chatting()" [class.items-end]="chatting()">
+        <label class="sr-only" for="creator-composer">Requirement</label>
+        <textarea
+          #composer
+          id="creator-composer"
+          rows="1"
+          class="bz-copy placeholder:text-muted-foreground max-h-40 min-h-10 flex-1 resize-none outline-none"
+          placeholder="Describe an app in your own words."
+          [value]="draft()"
+          [disabled]="sending() || making()"
+          (input)="onDraft($event)"
+          (keydown)="onKeydown($event)"
+        ></textarea>
+        <button
+          hlmBtn
+          type="submit"
+          size="icon"
+          class="bz-reception__send"
+          [class.is-ready]="!!draft().trim()"
+          [variant]="chatting() ? 'default' : 'ghost'"
+          aria-label="Send"
+          [disabled]="sending() || making() || !draft().trim()"
+        >
+          <ng-icon name="lucideArrowUp" />
+        </button>
+      </div>
+    </form>
+  </section>
+}

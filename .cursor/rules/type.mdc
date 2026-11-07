@@ -1,0 +1,17 @@
+---
+description: Baze type scale. Chat and descriptions use the shelf copy size.
+globs: frontend/**/*.{html,css}
+alwaysApply: true
+---
+
+# Type
+
+Reading copy is 13px (`--bz-text-meta`), the size under an app name on the shelf. Chat messages, composers, prompts, and app descriptions use `bz-copy` from `src/baze-brand.css`. Do not set `text-base`, `text-lg`, or a `font-size` on those.
+
+Titles stay on the scale in `src/styles.css`:
+
+- App names: `font-display text-lg` (1rem)
+- Section titles: `font-display text-2xl` (1.5rem)
+- Heroes: `font-display text-4xl` (2.25rem)
+
+`npm run check:type` must pass. It fails if chat or description templates drop `bz-copy` or pick a larger text size.

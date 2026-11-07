@@ -130,6 +130,8 @@
 }
 
 :root {
+  /* display 36px heroes, heading 24px sections, body 16px app names, meta 13px copy.
+     Chat and app descriptions use .bz-copy, which reads --bz-text-meta. */
   --bz-text-display: 2.25rem;
   --bz-text-heading: 1.5rem;
   --bz-text-body: 1rem;

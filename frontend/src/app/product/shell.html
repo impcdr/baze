@@ -6,7 +6,8 @@
     </a>
     <nav class="bz-nav" aria-label="Places">
       <span class="bz-nav__glide" aria-hidden="true"></span>
-      <a routerLink="/apps" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">My apps</a>
+      <a routerLink="/apps" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: false }" ariaCurrentWhenActive="page">My apps</a>
+      <a routerLink="/creator" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Creator</a>
       <a routerLink="/chat" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Chat</a>
     </nav>
     @if (account(); as person) {
@@ -79,5 +80,12 @@
   <div class="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col overflow-hidden px-6">
     <router-outlet />
   </div>
+  <footer class="bz-foot">
+    <div class="bz-foot__row">
+      <a class="bz-foot__brand" routerLink="/" aria-label="baze home">
+        <bz-logo [wordSize]="18" />
+      </a>
+    </div>
+  </footer>
 </div>
 <hlm-toaster [theme]="theme.mode()" position="bottom-center" />
