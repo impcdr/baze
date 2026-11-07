@@ -1,4 +1,4 @@
-import { Routes } from '@angular/router';
+import { Routes, UrlMatchResult, UrlSegment } from '@angular/router';
 import { BuildingPage } from './product/building-page';
 import { ChatPage } from './product/chat-page';
 import { HomePage } from './product/home-page';
@@ -8,8 +8,14 @@ import { ReadyPage } from './product/ready-page';
 import { ShelfPage } from './product/shelf-page';
 import { Shell } from './product/shell';
 
+/** Live apps are served at /<32-character hex id>. */
+export function appIdMatcher(segments: UrlSegment[]): UrlMatchResult | null {
+  if (segments.length !== 1 || !/^[0-9a-f]{32}$/.test(segments[0].path)) return null;
+  return { consumed: segments, posParams: { appId: segments[0] } };
+}
+
 export const routes: Routes = [
-  { path: 'a/:slug', component: OpenAppPage },
+  { matcher: appIdMatcher, component: OpenAppPage },
   {
     path: '',
     component: Shell,

@@ -34,8 +34,8 @@ export class OpenAppPage {
 
   constructor() {
     inject(ActivatedRoute).paramMap.pipe(
-      map((params) => params.get('slug') ?? ''),
-      switchMap((slug) => this.api.workspace(slug).pipe(catchError(() => of(null)))),
+      map((params) => params.get('appId') ?? ''),
+      switchMap((appId) => this.api.workspace(appId).pipe(catchError(() => of(null)))),
       takeUntilDestroyed(),
     ).subscribe((workspace) => {
       this.workspace.set(workspace);

@@ -1,4 +1,4 @@
-"""MongoDB client for conversation documents."""
+"""MongoDB client for users, apps, drafts, and conversations."""
 
 from __future__ import annotations
 
@@ -25,7 +25,13 @@ def get_client(settings: Settings) -> MongoClient:
             serverSelectionTimeoutMS=3000,
         )
         _db_name = settings.mongo_db
-        _client[settings.mongo_db].conversations.create_index([("updatedAt", -1)])
+        database = _client[settings.mongo_db]
+        database.conversations.create_index([("updatedAt", -1)])
+        database.users.create_index("email", unique=True)
+        database.apps.create_index([("ownerId", 1), ("sort", 1)])
+        database.apps.create_index("slug", unique=True)
+        database.apps.create_index("draftKey", unique=True, sparse=True)
+        database.drafts.create_index([("ownerId", 1), ("updatedAt", -1)])
     return _client
 
 
@@ -35,3 +41,15 @@ def get_db(settings: Settings) -> Database:
 
 def conversations(settings: Settings) -> Collection:
     return get_db(settings).conversations
+
+
+def users(settings: Settings) -> Collection:
+    return get_db(settings).users
+
+
+def apps(settings: Settings) -> Collection:
+    return get_db(settings).apps
+
+
+def drafts(settings: Settings) -> Collection:
+    return get_db(settings).drafts

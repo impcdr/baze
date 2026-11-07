@@ -9,6 +9,7 @@ import falcon
 from baze_api.settings import Settings
 
 PUBLIC_PATHS = {"/api/health", "/api"}
+PUBLIC_PREFIXES = ("/api/account", "/api/home", "/api/presets", "/api/apps", "/api/shared", "/api/drafts")
 
 
 class CorsMiddleware:
@@ -32,7 +33,9 @@ class AuthMiddleware:
     def process_request(self, req: falcon.Request, resp: falcon.Response) -> None:
         if req.method == "OPTIONS" or not req.path.startswith("/api"):
             return
-        if req.path in PUBLIC_PATHS:
+        if req.path in PUBLIC_PATHS or any(
+            req.path == prefix or req.path.startswith(prefix + "/") for prefix in PUBLIC_PREFIXES
+        ):
             return
         header = req.get_header("Authorization") or ""
         scheme, _, given = header.partition(" ")
