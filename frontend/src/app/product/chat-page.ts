@@ -5,7 +5,7 @@ import { ChatPanel } from '../chat/chat-panel';
   selector: 'bz-chat-page',
   imports: [ChatPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `<app-chat-panel [docked]="false" />`,
+  template: `<app-chat-panel />`,
   host: { class: 'flex min-h-0 flex-1 flex-col' },
 })
 export class ChatPage {

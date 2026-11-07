@@ -1,73 +1,60 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('kiln.theme.v2', 'light');
+    localStorage.setItem('kiln.theme', 'light');
+  });
   await page.goto('/chat');
-  await expect(page.getByRole('heading', { name: 'What are we firing up?' })).toBeVisible();
+  await expect(page.getByTestId('chat-title')).toHaveText('Studio invoices');
 });
 
-async function revealSidebar(page: Page): Promise<void> {
-  const newChat = page.getByTestId('new-chat');
-  if (await newChat.isVisible()) {
-    return;
-  }
-  await page.getByRole('button', { name: 'Toggle Sidebar' }).click();
-  await expect(newChat).toBeVisible();
-}
+test('opens the seeded conversation at the latest message', async ({ page }, testInfo) => {
+  await expect(page.getByTestId('message-user').first()).toContainText('studio invoices');
+  await expect(page.getByTestId('message-assistant').last()).toContainText('Add invoice');
+  const log = page.getByRole('log', { name: 'Conversation' });
+  await expect
+    .poll(() => log.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThan(48);
+  await expect(page.getByTestId('message-user').last()).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('seed-bottom.png') });
 
-test('shows the empty chat', async ({ page }, testInfo) => {
-  await expect(page.getByText('Nothing leaves this page.')).toBeVisible();
+  await log.evaluate((el) => {
+    el.scrollTop = 0;
+  });
+  await expect(page.getByTestId('message-user').first()).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('seed-top.png') });
+});
+
+test('sends a typed message', async ({ page }, testInfo) => {
+  await page.getByTestId('composer').fill('Plan a quiet weekend');
+  await page.getByTestId('send').click();
+  await expect(page.getByTestId('message-assistant').last()).toContainText('Leave one evening empty on purpose');
+  await expect(page.getByTestId('stop')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('reply.png') });
+});
+
+test('starts a new chat and switches back', async ({ page }, testInfo) => {
+  await page.getByTestId('new-chat').click();
+  await expect(page.getByRole('heading', { name: 'What should we talk through?' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Plan a quiet weekend' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('empty.png') });
-});
 
-test('streams a reply from a starter prompt', async ({ page }, testInfo) => {
-  await page.getByRole('button', { name: 'Plan a quiet weekend' }).click();
-  await expect(page.getByTestId('message-user')).toContainText('Plan a quiet weekend');
-  await expect(page.getByTestId('message-assistant')).toContainText('Leave one evening empty on purpose');
-  await expect(page.getByTestId('stop')).toHaveCount(0);
-  await revealSidebar(page);
-  await expect(page.getByTestId('conversation')).toContainText('Plan a quiet weekend');
-  await expect(page.getByTestId('chat-title')).toHaveText('Plan a quiet weekend');
-  await page.screenshot({ path: testInfo.outputPath('conversation.png') });
-});
-
-test('sends a typed message, opens a new chat, and switches back', async ({ page }) => {
-  await page.getByTestId('composer').fill('Explain signals in Angular');
-  await page.getByTestId('send').click();
-  await expect(page.getByTestId('message-assistant')).toContainText('computed signal');
-
-  await revealSidebar(page);
-  await page.getByTestId('new-chat').click();
-  await expect(page.getByRole('heading', { name: 'What are we firing up?' })).toBeVisible();
-
-  await revealSidebar(page);
+  await page.getByTestId('chat-title').click();
   await page.getByTestId('conversation').click();
-  await expect(page.getByTestId('message-user')).toContainText('Explain signals in Angular');
+  await expect(page.getByTestId('chat-title')).toHaveText('Studio invoices');
+  await expect(page.getByTestId('message-user').first()).toContainText('studio invoices');
 });
 
 test('renames and deletes a chat', async ({ page }) => {
-  await page.getByRole('button', { name: 'Draft a short note' }).click();
-  await expect(page.getByTestId('message-assistant')).toContainText('Friday');
-
   await page.getByTestId('chat-menu').click();
   await page.getByRole('menuitem', { name: 'Rename' }).click();
   await page.getByTestId('rename-input').fill('Field notes');
   await page.getByTestId('rename-save').click();
   await expect(page.getByTestId('chat-title')).toHaveText('Field notes');
-  await revealSidebar(page);
-  await expect(page.getByTestId('conversation')).toContainText('Field notes');
-  await page.getByTestId('conversation').click();
 
   await page.getByTestId('chat-menu').click();
   await page.getByRole('menuitem', { name: 'Delete' }).click();
-  await expect(page.getByTestId('conversation')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'What are we firing up?' })).toBeVisible();
-});
-
-test('switches to light mode', async ({ page }, testInfo) => {
-  await page.getByTestId('theme-toggle').click();
-  await expect
-    .poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark')))
-    .toBe(false);
-  await page.screenshot({ path: testInfo.outputPath('light.png') });
+  await expect(page.getByRole('heading', { name: 'What should we talk through?' })).toBeVisible();
+  await expect(page.getByTestId('message-user')).toHaveCount(0);
 });

@@ -1,4 +1,5 @@
 import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
+import { seededChat } from './chat-seed';
 import { replyFor } from './replies';
 
 export interface ChatMessage {
@@ -207,16 +208,22 @@ export class ChatStore {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) {
-        return { conversations: [], activeId: null };
+        const seeded = seededChat();
+        return { conversations: [seeded], activeId: seeded.id };
       }
       const parsed = JSON.parse(raw) as Partial<Persisted>;
-      const conversations = Array.isArray(parsed.conversations) ? parsed.conversations : [];
+      if (!Array.isArray(parsed.conversations)) {
+        const seeded = seededChat();
+        return { conversations: [seeded], activeId: seeded.id };
+      }
+      const conversations = parsed.conversations;
       const activeId = conversations.some((conversation) => conversation.id === parsed.activeId)
         ? (parsed.activeId ?? null)
         : null;
       return { conversations, activeId };
     } catch {
-      return { conversations: [], activeId: null };
+      const seeded = seededChat();
+      return { conversations: [seeded], activeId: seeded.id };
     }
   }
 }

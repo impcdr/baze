@@ -2,21 +2,33 @@
   id="chat-panel"
   data-testid="chat-panel"
   aria-label="Chat"
-  [class]="docked
-    ? 'bg-background/95 fixed inset-x-0 bottom-0 z-30 flex max-h-[70svh] flex-col overflow-hidden border-t backdrop-blur'
-    : 'flex min-h-0 flex-1 flex-col overflow-hidden bg-background'"
+  class="flex min-h-0 flex-1 flex-col"
 >
-  <div class="mx-auto flex w-full max-w-3xl flex-col" [class]="docked ? 'min-h-0 max-h-[70svh]' : 'min-h-0 flex-1'">
-    <div class="flex shrink-0 items-center gap-2 px-1 pt-1">
-      <p class="truncate text-sm font-medium" data-testid="chat-title">
-        {{ store.active()?.title ?? 'New chat' }}
-      </p>
-      <div class="ms-auto flex items-center gap-1">
-        <button hlmBtn type="button" variant="ghost" size="sm" data-testid="new-chat" (click)="startNewChat()">
-          <ng-icon name="lucidePlus" />
-          New chat
+  <div class="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
+    <div class="flex shrink-0 items-center gap-1 py-2">
+      @if (showHistory()) {
+        <button
+          hlmBtn
+          type="button"
+          variant="ghost"
+          size="sm"
+          class="text-muted-foreground max-w-[70%] px-2 font-medium"
+          data-testid="chat-title"
+          [hlmDropdownMenuTrigger]="chatsMenu"
+          align="start"
+        >
+          <span class="truncate">{{ store.active()?.title ?? 'Chats' }}</span>
+          <ng-icon name="lucideChevronDown" />
         </button>
+      } @else if (store.active(); as chat) {
+        <p class="text-muted-foreground truncate px-2 text-sm font-medium" data-testid="chat-title">{{ chat.title }}</p>
+      }
+      <div class="ms-auto flex items-center">
         @if (store.active()) {
+          <button hlmBtn type="button" variant="ghost" size="sm" data-testid="new-chat" aria-label="New chat" (click)="startNewChat()">
+            <ng-icon name="lucidePlus" />
+            <span class="hidden sm:inline">New chat</span>
+          </button>
           <button
             hlmBtn
             type="button"
@@ -26,7 +38,6 @@
             aria-label="Chat actions"
             [hlmDropdownMenuTrigger]="chatMenu"
             align="end"
-            [side]="docked ? 'top' : 'bottom'"
           >
             <ng-icon name="lucideEllipsis" />
           </button>
@@ -34,45 +45,17 @@
       </div>
     </div>
 
-    @if (store.conversations().length > 0) {
-      <div class="flex shrink-0 gap-1 overflow-x-auto pt-2">
-        @for (chat of store.conversations(); track chat.id) {
-          <button
-            hlmBtn
-            type="button"
-            size="sm"
-            class="max-w-48 shrink-0"
-            data-testid="conversation"
-            [variant]="chat.id === store.activeId() ? 'secondary' : 'ghost'"
-            (click)="selectChat(chat.id)"
-          >
-            <span class="truncate">{{ chat.title }}</span>
-          </button>
-        }
-      </div>
-    }
-
     @if (store.messages().length === 0) {
-      <div
-        data-testid="empty-state"
-        class="flex flex-col gap-4 px-6 py-8"
-        [class.min-h-0]="!docked"
-        [class.flex-1]="!docked"
-        [class.items-center]="!docked"
-        [class.justify-center]="!docked"
-      >
-        <h2 class="font-display text-center text-xl font-normal tracking-tight">What should we talk through?</h2>
-        <p class="text-muted-foreground max-w-md text-center text-sm">
-          Drafts, plans, and explanations. Replies stay on this shelf, in this browser.
-        </p>
-        <div class="grid w-full max-w-xl gap-2 sm:grid-cols-2">
+      <div data-testid="empty-state" class="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 px-2">
+        <div class="max-w-md text-center">
+          <h2 class="font-display text-2xl">What should we talk through?</h2>
+          <p class="text-muted-foreground mt-2 text-sm">Replies stay in this browser.</p>
+        </div>
+        <div class="flex w-full max-w-md flex-col">
           @for (prompt of prompts; track prompt) {
             <button
-              hlmBtn
               type="button"
-              variant="outline"
-              size="sm"
-              class="h-auto justify-start px-3 py-2 text-start whitespace-normal"
+              class="text-muted-foreground hover:bg-card hover:text-foreground rounded-xl px-3 py-2.5 text-start text-base"
               (click)="ask(prompt)"
             >
               {{ prompt }}
@@ -81,98 +64,87 @@
         </div>
       </div>
     } @else {
-      <div class="relative min-h-0" [class]="docked ? 'h-[min(20rem,calc(70svh-12rem))]' : 'flex-1'">
-        <div hlmMessageScrollerProvider [autoScroll]="true">
-          <div hlmMessageScroller class="absolute inset-0">
-            <div hlmMessageScrollerViewport aria-label="Conversation">
-              <div hlmMessageScrollerContent class="flex w-full flex-col gap-3 px-1 py-2">
-                @for (message of store.messages(); track message.id) {
-                  <div
-                    hlmMessageScrollerItem
-                    [messageId]="message.id"
-                    [scrollAnchor]="message.role === 'user'"
-                    [attr.data-testid]="'message-' + message.role"
+      <div
+        #thread
+        class="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        role="log"
+        aria-relevant="additions"
+        aria-label="Conversation"
+        (scroll)="onThreadScroll($event)"
+      >
+        <ol class="flex flex-col gap-8 py-4">
+          @for (message of store.messages(); track message.id) {
+            @if (message.role === 'user') {
+              <li class="flex justify-end" data-testid="message-user">
+                <p class="bg-card border-border max-w-[85%] rounded-xl border px-3.5 py-2 text-base leading-relaxed whitespace-pre-wrap">
+                  {{ message.content }}
+                </p>
+              </li>
+            } @else {
+              <li class="group relative" data-testid="message-assistant">
+                <div class="text-base leading-relaxed whitespace-pre-wrap">
+                  @if (message.content) {
+                    {{ message.content }}
+                  } @else {
+                    <span class="shimmer text-muted-foreground">Thinking…</span>
+                  }
+                </div>
+                @if (message.content && store.streamingId() !== message.id) {
+                  <button
+                    hlmBtn
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    class="text-muted-foreground absolute top-full start-0 mt-0.5 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    [attr.aria-label]="copiedId() === message.id ? 'Copied' : 'Copy reply'"
+                    (click)="copy(message.id, message.content)"
                   >
-                    <div hlmMessage [align]="message.role === 'user' ? 'end' : 'start'">
-                      <div hlmMessageAvatar>
-                        @if (message.role === 'user') {
-                          <span hlmAvatar size="sm">
-                            <span hlmAvatarFallback class="text-xs">Y</span>
-                          </span>
-                        } @else {
-                          <bz-logo [word]="false" [wordSize]="18" />
-                        }
-                      </div>
-                      <div hlmMessageContent>
-                        @if (message.role === 'assistant') {
-                          <div hlmMessageHeader>baze</div>
-                        }
-                        <div
-                          hlmBubble
-                          [variant]="message.role === 'user' ? 'default' : 'ghost'"
-                          [align]="message.role === 'user' ? 'end' : 'start'"
-                        >
-                          <div hlmBubbleContent class="text-sm leading-relaxed whitespace-pre-wrap">
-                            @if (message.content) {
-                              {{ message.content }}
-                            } @else {
-                              <hlm-spinner class="size-4" />
-                            }
-                          </div>
-                        </div>
-                        @if (message.role === 'assistant' && message.content && store.streamingId() !== message.id) {
-                          <div hlmMessageFooter>
-                            <button hlmBtn type="button" variant="ghost" size="xs" aria-label="Copy reply" (click)="copy(message.content)">
-                              <ng-icon name="lucideCopy" />
-                              Copy
-                            </button>
-                          </div>
-                        }
-                      </div>
-                    </div>
-                  </div>
+                    <ng-icon [name]="copiedId() === message.id ? 'lucideCheck' : 'lucideCopy'" />
+                  </button>
                 }
-              </div>
-            </div>
-            <button hlmMessageScrollerButton type="button"></button>
-          </div>
-        </div>
+              </li>
+            }
+          }
+        </ol>
       </div>
     }
 
-    <form class="mt-auto shrink-0 px-1 pt-3 pb-4" (submit)="onSubmit($event)">
-      <hlm-input-group class="bg-card rounded-2xl shadow-sm">
+    <form class="shrink-0 pt-2 pb-4" (submit)="onSubmit($event)">
+      <div class="bg-card border-border flex items-end gap-2 rounded-xl border px-2 py-2">
+        <label class="sr-only" for="chat-composer">Message</label>
         <textarea
           #composer
-          hlmInputGroupTextarea
+          id="chat-composer"
           rows="1"
-          class="max-h-32 min-h-12 px-3.5 py-2.5 text-base"
-          placeholder="Ask baze…"
+          class="placeholder:text-muted-foreground max-h-40 min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-normal outline-none"
+          placeholder="Write a message"
           data-testid="composer"
           (input)="onDraft($event)"
           (keydown)="onKeydown($event)"
         ></textarea>
-        <div hlmInputGroupAddon align="block-end" class="px-2 pb-2">
-          <span class="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <kbd hlmKbd>Enter</kbd>
-            to send
-            <span class="hidden sm:inline">· Shift for a new line</span>
-          </span>
-          @if (store.streaming()) {
-            <button hlmInputGroupButton type="button" variant="secondary" size="icon-sm" class="ms-auto" data-testid="stop" aria-label="Stop" (click)="store.stop()">
-              <ng-icon name="lucideSquare" />
-            </button>
-          } @else {
-            <button hlmInputGroupButton type="submit" variant="default" size="icon-sm" class="ms-auto" data-testid="send" aria-label="Send" [disabled]="!draft().trim()">
-              <ng-icon name="lucideArrowUp" />
-            </button>
-          }
-        </div>
-      </hlm-input-group>
-      <p class="text-muted-foreground mt-2 text-center text-xs">Replies are written in the browser. Nothing leaves this page.</p>
+        @if (store.streaming()) {
+          <button hlmBtn type="button" variant="secondary" size="icon" data-testid="stop" aria-label="Stop" (click)="store.stop()">
+            <ng-icon name="lucideSquare" />
+          </button>
+        } @else {
+          <button hlmBtn type="submit" size="icon" data-testid="send" aria-label="Send" [disabled]="!draft().trim()">
+            <ng-icon name="lucideArrowUp" />
+          </button>
+        }
+      </div>
     </form>
   </div>
 </section>
+
+<ng-template #chatsMenu>
+  <div hlmDropdownMenu class="w-64">
+    @for (chat of store.conversations(); track chat.id) {
+      <button hlmDropdownMenuItem type="button" data-testid="conversation" (triggered)="selectChat(chat.id)">
+        <span class="truncate">{{ chat.title }}</span>
+      </button>
+    }
+  </div>
+</ng-template>
 
 <ng-template #chatMenu>
   <div hlmDropdownMenu class="w-48">

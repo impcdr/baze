@@ -1,7 +1,18 @@
-import { ChangeDetectionStrategy, Component, ElementRef, Input, inject, signal, viewChild } from '@angular/core';
+import {
+  afterEveryRender,
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import {
   lucideArrowUp,
+  lucideCheck,
+  lucideChevronDown,
   lucideCopy,
   lucideEllipsis,
   lucidePencil,
@@ -9,20 +20,10 @@ import {
   lucideSquare,
   lucideTrash2,
 } from '@ng-icons/lucide';
-import { toast } from '@spartan-ng/brain/sonner';
-import { HlmAvatarImports } from '@spartan-ng/helm/avatar';
-import { HlmBadgeImports } from '@spartan-ng/helm/badge';
-import { HlmBubbleImports } from '@spartan-ng/helm/bubble';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
-import { HlmDialogImports, HlmDialog } from '@spartan-ng/helm/dialog';
+import { HlmDialog, HlmDialogImports } from '@spartan-ng/helm/dialog';
 import { HlmDropdownMenuImports } from '@spartan-ng/helm/dropdown-menu';
 import { HlmInputImports } from '@spartan-ng/helm/input';
-import { HlmInputGroupImports } from '@spartan-ng/helm/input-group';
-import { HlmKbdImports } from '@spartan-ng/helm/kbd';
-import { HlmMessageImports } from '@spartan-ng/helm/message';
-import { HlmMessageScrollerImports } from '@spartan-ng/helm/message-scroller';
-import { HlmSpinnerImports } from '@spartan-ng/helm/spinner';
-import { BazeLogo } from '../baze/brand';
 import { ChatStore } from './chat-store';
 
 export const STARTER_PROMPTS = [
@@ -34,25 +35,12 @@ export const STARTER_PROMPTS = [
 
 @Component({
   selector: 'app-chat-panel',
-  imports: [
-    NgIcon,
-    BazeLogo,
-    HlmButtonImports,
-    HlmAvatarImports,
-    HlmBadgeImports,
-    HlmMessageImports,
-    HlmBubbleImports,
-    HlmMessageScrollerImports,
-    HlmInputGroupImports,
-    HlmDropdownMenuImports,
-    HlmDialogImports,
-    HlmKbdImports,
-    HlmSpinnerImports,
-    HlmInputImports,
-  ],
+  imports: [NgIcon, HlmButtonImports, HlmDropdownMenuImports, HlmDialogImports, HlmInputImports],
   providers: [
     provideIcons({
       lucideArrowUp,
+      lucideCheck,
+      lucideChevronDown,
       lucideCopy,
       lucideEllipsis,
       lucidePencil,
@@ -63,20 +51,47 @@ export const STARTER_PROMPTS = [
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './chat-panel.html',
-  host: {
-    '[class]': 'docked ? "block" : "flex min-h-0 flex-1 flex-col"',
-  },
+  host: { class: 'flex min-h-0 flex-1 flex-col' },
 })
 export class ChatPanel {
-  @Input() docked = true;
   protected readonly store = inject(ChatStore);
   protected readonly prompts = STARTER_PROMPTS;
   protected readonly renameDraft = signal('');
   protected readonly draft = signal('');
+  protected readonly copiedId = signal<string | null>(null);
+  /** Keep the latest line in view until the reader scrolls up. */
+  private readonly follow = signal(true);
+  private readonly thread = viewChild<ElementRef<HTMLElement>>('thread');
   private readonly composer = viewChild<ElementRef<HTMLTextAreaElement>>('composer');
+  private scrollKey = '';
+  private copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => {
+      if (this.copyTimer) clearTimeout(this.copyTimer);
+    });
+
+    afterEveryRender({
+      mixedReadWrite: () => {
+        const el = this.thread()?.nativeElement;
+        if (!el || !this.follow()) return;
+        const key = this.store
+          .messages()
+          .map((message) => `${message.id}:${message.content.length}`)
+          .join('|');
+        if (key === this.scrollKey) return;
+        this.scrollKey = key;
+        this.pin(el);
+      },
+    });
+  }
 
   focusComposer(): void {
     this.composer()?.nativeElement.focus({ preventScroll: true });
+  }
+
+  protected showHistory(): boolean {
+    return this.store.conversations().length > 1 || (this.store.conversations().length > 0 && !this.store.active());
   }
 
   protected startNewChat(): void {
@@ -85,11 +100,15 @@ export class ChatPanel {
   }
 
   protected selectChat(id: string): void {
+    this.follow.set(true);
+    this.scrollKey = '';
     this.store.select(id);
     this.focusComposer();
   }
 
   protected ask(prompt: string): void {
+    this.follow.set(true);
+    this.scrollKey = '';
     this.store.send(prompt);
     this.clearComposer();
   }
@@ -113,6 +132,13 @@ export class ChatPanel {
     field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
   }
 
+  protected onThreadScroll(event: Event): void {
+    const el = event.target as HTMLElement;
+    if (el.dataset['pinning'] === '1') return;
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    this.follow.set(distance < 80);
+  }
+
   protected deleteActive(): void {
     const id = this.store.activeId();
     if (id) this.store.remove(id);
@@ -129,9 +155,15 @@ export class ChatPanel {
     dialog.close();
   }
 
-  protected async copy(text: string): Promise<void> {
-    await navigator.clipboard.writeText(text);
-    toast.success('Copied');
+  protected async copy(id: string, text: string): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return;
+    }
+    this.copiedId.set(id);
+    if (this.copyTimer) clearTimeout(this.copyTimer);
+    this.copyTimer = setTimeout(() => this.copiedId.set(null), 1400);
   }
 
   protected onRenameInput(event: Event): void {
@@ -141,6 +173,8 @@ export class ChatPanel {
   private sendDraft(): void {
     const field = this.composer()?.nativeElement;
     const text = field?.value ?? this.draft();
+    this.follow.set(true);
+    this.scrollKey = '';
     this.store.send(text);
     this.clearComposer();
   }
@@ -151,5 +185,15 @@ export class ChatPanel {
     if (!field) return;
     field.value = '';
     field.style.height = 'auto';
+  }
+
+  private pin(el: HTMLElement): void {
+    const apply = () => {
+      el.dataset['pinning'] = '1';
+      el.scrollTop = el.scrollHeight;
+      delete el.dataset['pinning'];
+    };
+    apply();
+    requestAnimationFrame(apply);
   }
 }
