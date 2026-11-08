@@ -1,4 +1,4 @@
-export type AppStatus = 'live' | 'stopped' | 'building' | 'attention' | 'paused' | 'error';
+export type AppStatus = 'live' | 'stopped' | 'building' | 'attention' | 'paused' | 'error' | 'closed';
 export type PresetId = 'ocean' | 'forest' | 'sunset' | 'plum' | 'graphite' | 'rose';
 export type AppLabelTone = 'default' | 'secondary' | 'success' | 'warning' | 'outline';
 
@@ -7,12 +7,32 @@ export interface AppLabel {
   tone: AppLabelTone;
 }
 
+export interface AccountPerson {
+  name: string;
+  email: string;
+  initials: string;
+  color: string;
+  ink: string;
+}
+
 export interface Account {
   name: string;
   initials: string;
   color: string;
   ink: string;
   email: string;
+  studio: string;
+  accounts: AccountPerson[];
+}
+
+export interface AppShareRow {
+  name: string;
+  email: string;
+  initials: string;
+  color: string;
+  ink: string;
+  owner: boolean;
+  shared: boolean;
 }
 
 export interface ShelfApp {
@@ -33,16 +53,42 @@ export interface ShelfApp {
   path: string | null;
   external: boolean;
   sharedBy: string | null;
+  people: AccountPerson[];
   runnable: boolean;
   deletable: boolean;
   statusError: string | null;
+  demo: boolean;
+  expiresAt: number | null;
 }
 
 export interface AppTurn {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'progress' | 'supervisor';
   content: string;
   createdAt: number;
+  state?: 'waiting' | 'active' | 'done' | 'stopped';
+  stepId?: string;
+  decided?: boolean;
+  decision?: string;
+}
+
+export interface FlowNode {
+  id: string;
+  label: string;
+  kind: 'person' | 'page' | 'store' | 'file' | 'outside';
+}
+
+export interface FlowEdge {
+  from: string;
+  to: string;
+}
+
+export interface ChartEntry {
+  id: string;
+  kind: 'created' | 'changed' | 'containment' | 'decision';
+  summary: string;
+  detail?: string;
+  at: number;
 }
 
 export interface AppManage {
@@ -60,14 +106,32 @@ export interface AppManage {
   deletable: boolean;
   statusError: string | null;
   boxReady: boolean;
+  working: boolean;
+  activity: string;
   steps: AppStep[];
   messages: AppTurn[];
+  flow: { nodes: FlowNode[]; edges: FlowEdge[] };
+  record: ChartEntry[];
+  actions: { id: string; label: string }[];
+  sites: { host: string; suggested: boolean }[];
+  request: { host: string; why: string }[];
+  allowed: string[];
+  closed: string[];
+  canPrompt: boolean;
+  sharedBy: string | null;
+  shares: AppShareRow[];
+  demo: boolean;
+  expiresAt: number | null;
+  box: BoxChoice | null;
+  boxPrompt: string | null;
+  check: boolean;
 }
 
 export interface AppStep {
   id: string;
   label: string;
   state: 'waiting' | 'active' | 'done';
+  createdAt?: number | null;
 }
 
 export interface AppSketch {
@@ -77,9 +141,18 @@ export interface AppSketch {
   color: string;
 }
 
+export interface BoxChoice {
+  id: 'web' | 'data' | 'quarantine' | string;
+  name: string;
+  sentence: string;
+}
+
 export interface CreatorThread {
   messages: AppTurn[];
   sketch: AppSketch;
+  boxes: BoxChoice[];
+  recommended: string;
+  reason: string;
 }
 
 export interface Suggestion {
@@ -99,6 +172,14 @@ export interface HomePayload {
   featured: ShelfApp[];
 }
 
+export interface ShelfCheck {
+  id: string;
+  name: string;
+  specimen: string;
+  verdict: 'clear' | 'suspicious';
+  report: string;
+}
+
 export interface ShelfPayload {
   title: string;
   summary: string;
@@ -109,6 +190,7 @@ export interface ShelfPayload {
   sharedTitle: string;
   sharedSummary: string;
   shared: ShelfApp[];
+  checks: ShelfCheck[];
 }
 
 export interface Preset {

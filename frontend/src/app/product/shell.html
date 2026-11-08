@@ -8,7 +8,6 @@
       <span class="bz-nav__glide" aria-hidden="true"></span>
       <a routerLink="/apps" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: false }" ariaCurrentWhenActive="page">My apps</a>
       <a routerLink="/creator" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Creator</a>
-      <a routerLink="/chat" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Chat</a>
     </nav>
     @if (account(); as person) {
       <button
@@ -27,49 +26,64 @@
         <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-lg">
           <div hlmDialogHeader>
             <h2 hlmDialogTitle>Settings</h2>
-            <p hlmDialogDescription>How {{ person.name }} shows up on this shelf. Nothing here is saved yet.</p>
+            <p hlmDialogDescription>This account is signed in. These details stay with it.</p>
           </div>
           <form class="flex flex-col gap-4" (submit)="$event.preventDefault()">
-            <label class="flex flex-col gap-1.5 text-sm font-medium">
-              Name
-              <input hlmInput name="name" [value]="person.name" autocomplete="name" />
-            </label>
-            <label class="flex flex-col gap-1.5 text-sm font-medium">
-              Email
-              <input hlmInput type="email" name="email" [value]="person.email" autocomplete="email" />
-            </label>
-            <label class="flex flex-col gap-1.5 text-sm font-medium">
-              Studio
-              <input hlmInput name="studio" value="Lindner Studio" autocomplete="organization" />
-            </label>
-            <label class="flex flex-col gap-1.5 text-sm font-medium">
-              Appearance
-              <select hlmInput name="appearance">
-                <option value="light" selected>Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
-            <label class="flex flex-col gap-1.5 text-sm font-medium">
-              Language
-              <select hlmInput name="language">
-                <option value="en" selected>English</option>
-                <option value="de">Deutsch</option>
-              </select>
-            </label>
-            <fieldset class="flex flex-col gap-2">
-              <legend class="text-sm font-medium">Email</legend>
-              <label class="flex items-center gap-2 text-sm font-normal">
-                <input type="checkbox" name="ready" checked />
-                When an app is ready
+            <fieldset class="flex flex-col gap-4" disabled>
+              <label class="flex flex-col gap-1.5 text-sm font-medium">
+                Name
+                <input hlmInput name="name" [value]="person.name" autocomplete="name" readonly />
               </label>
-              <label class="flex items-center gap-2 text-sm font-normal">
-                <input type="checkbox" name="shared" checked />
-                When someone shares an app
+              <label class="flex flex-col gap-1.5 text-sm font-medium">
+                Email
+                <input hlmInput type="email" name="email" [value]="person.email" autocomplete="email" readonly />
               </label>
+              <label class="flex flex-col gap-1.5 text-sm font-medium">
+                Studio
+                <input hlmInput name="studio" [value]="person.studio" autocomplete="organization" readonly />
+              </label>
+              <label class="flex flex-col gap-1.5 text-sm font-medium">
+                Appearance
+                <select hlmInput name="appearance">
+                  <option value="light" selected>Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+              </label>
+              <label class="flex flex-col gap-1.5 text-sm font-medium">
+                Language
+                <select hlmInput name="language">
+                  <option value="en" selected>English</option>
+                  <option value="de">Deutsch</option>
+                </select>
+              </label>
+              <div class="flex flex-col gap-2">
+                <span class="text-sm font-medium">Email</span>
+                <label class="flex items-center gap-2 text-sm font-normal">
+                  <input type="checkbox" name="ready" checked />
+                  When an app is ready
+                </label>
+                <label class="flex items-center gap-2 text-sm font-normal">
+                  <input type="checkbox" name="shared" checked />
+                  When someone shares an app
+                </label>
+              </div>
+            </fieldset>
+            <fieldset class="flex flex-col gap-2 border-t pt-4">
+              <legend class="text-sm font-medium">Switch account</legend>
+              <div hlmRadioGroup class="gap-2" [value]="person.email" [disabled]="switching()" (valueChange)="switchAccount($event)">
+                @for (account of person.accounts; track account.email) {
+                  <label class="flex cursor-pointer items-center gap-2">
+                    <hlm-radio [value]="account.email" class="items-center">
+                      <hlm-radio-indicator indicator />
+                    </hlm-radio>
+                    <span class="grid size-6 shrink-0 place-items-center rounded-full font-display text-[10px] font-extrabold" [style.background]="account.color" [style.color]="account.ink">{{ account.initials }}</span>
+                    <span class="text-sm font-normal">{{ account.name }}</span>
+                  </label>
+                }
+              </div>
             </fieldset>
             <div hlmDialogFooter>
               <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
-              <button hlmBtn type="submit">Save</button>
             </div>
           </form>
         </hlm-dialog-content>
@@ -83,8 +97,19 @@
   <footer class="bz-foot">
     <div class="bz-foot__row">
       <a class="bz-foot__brand" routerLink="/" aria-label="baze home">
-        <bz-logo [wordSize]="18" />
+        <bz-logo [wordSize]="14" />
       </a>
+      <div class="bz-foot__credits">
+        <a class="bz-foot__credit" href="https://www.vultr.com/" target="_blank" rel="noopener noreferrer">
+          <img class="bz-foot__mark" src="vultr.svg" alt="" />
+          <span class="bz-copy">built on Vultr</span>
+        </a>
+        <a class="bz-foot__credit" href="https://lablab.ai/" target="_blank" rel="noopener noreferrer">
+          <img class="bz-foot__mark bz-foot__mark--lablab" src="lablab-logo.png" alt="" />
+          <img class="bz-foot__mark bz-foot__mark--lablab-dark" src="lablab-logo-dark.png" alt="" />
+          <span class="bz-copy">lablab.ai hackathon</span>
+        </a>
+      </div>
     </div>
   </footer>
 </div>

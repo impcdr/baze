@@ -7,6 +7,43 @@ USER_NAME = "Vultr Fanboi"
 USER_INITIALS = "VF"
 USER_COLOR = "#22c79b"
 USER_INK = "#0b1b3f"
+USER_STUDIO = "Lindner Studio"
+
+ACCOUNTS = (
+    {
+        "email": USER_EMAIL,
+        "name": USER_NAME,
+        "initials": USER_INITIALS,
+        "color": USER_COLOR,
+        "ink": USER_INK,
+        "studio": USER_STUDIO,
+    },
+    {
+        "email": "max.mustermann@example.com",
+        "name": "Max Mustermann",
+        "initials": "MM",
+        "color": "#1a5ce6",
+        "ink": "#ffffff",
+        "studio": "Mustermann",
+    },
+    {
+        "email": "erika.mustermann@example.com",
+        "name": "Erika Mustermann",
+        "initials": "EM",
+        "color": "#7c3aed",
+        "ink": "#ffffff",
+        "studio": "Mustermann",
+    },
+    {
+        "email": "otto.normalverbraucher@example.com",
+        "name": "Otto Normalverbraucher",
+        "initials": "ON",
+        "color": "#c2410c",
+        "ink": "#ffffff",
+        "studio": "Normalverbraucher",
+    },
+)
+ACCOUNT_EMAILS = {account["email"] for account in ACCOUNTS}
 
 STUDIO_ID = "eca299ce2f7bc6d8c3f360f68683dd11"
 WATCHLIST_ID = "3249dc7992f5a438aa4700f77f702d6e"

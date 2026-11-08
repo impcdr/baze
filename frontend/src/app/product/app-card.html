@@ -23,9 +23,25 @@
     </span>
   </div>
 
-  <div class="mt-auto flex flex-wrap items-center gap-1.5">
-    @for (label of labels(); track label.text) {
-      <span hlmBadge [variant]="label.tone">{{ label.text }}</span>
+  <div class="mt-auto flex items-end justify-between gap-2">
+    <div class="flex min-w-0 flex-wrap items-center gap-1.5">
+      @for (label of labels(); track label.text) {
+        <span hlmBadge [variant]="label.tone">
+          @if (label.text === 'Being made') {
+            <ng-icon name="lucideLoaderCircle" class="animate-spin" aria-hidden="true" />
+          }
+          {{ label.text }}
+        </span>
+      }
+    </div>
+    @if (shown().people.length > 1) {
+      <div hlmAvatarGroup class="shrink-0" [attr.aria-label]="'People on ' + shown().name">
+        @for (person of shown().people; track person.email) {
+          <span hlmAvatar size="sm" [attr.aria-label]="person.name">
+            <span hlmAvatarFallback class="font-display text-[10px] font-extrabold" [style.background]="person.color" [style.color]="person.ink">{{ person.initials }}</span>
+          </span>
+        }
+      </div>
     }
   </div>
 
@@ -49,7 +65,7 @@
     <button
       hlmDropdownMenuItem
       type="button"
-      [disabled]="!shown().runnable || shown().status === 'live' || pending()"
+      [disabled]="!!shown().sharedBy || !shown().runnable || shown().status === 'live' || pending()"
       (click)="start()"
     >
       {{ pending() === 'start' ? 'Starting…' : 'Start app' }}
@@ -57,7 +73,7 @@
     <button
       hlmDropdownMenuItem
       type="button"
-      [disabled]="!shown().runnable || shown().status !== 'live' || pending()"
+      [disabled]="!!shown().sharedBy || !shown().runnable || shown().status !== 'live' || pending()"
       (click)="stop()"
     >
       {{ pending() === 'stop' ? 'Stopping…' : 'Stop app' }}
@@ -78,9 +94,19 @@
       <h3 hlmDialogTitle>Delete {{ shown().name }}?</h3>
       <p hlmDialogDescription>The container and the app go away.</p>
     </div>
+    <label class="bz-copy" [attr.for]="'delete-code-' + shown().id">Admin code</label>
+    <input
+      hlmInput
+      [id]="'delete-code-' + shown().id"
+      type="password"
+      name="code"
+      autocomplete="off"
+      [value]="deleteCode()"
+      (input)="onDeleteCode($event)"
+    />
     <div hlmDialogFooter>
       <button hlmBtn type="button" variant="outline" hlmDialogClose>Cancel</button>
-      <button hlmBtn type="button" variant="destructive" (click)="remove(); deleteDialog.close()">Delete app</button>
+      <button hlmBtn type="button" variant="destructive" (click)="remove(ctx)" [disabled]="pending() === 'delete' || !deleteCode().trim()">Delete app</button>
     </div>
   </hlm-dialog-content>
 </hlm-dialog>

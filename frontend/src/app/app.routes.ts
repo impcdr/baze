@@ -1,6 +1,5 @@
 import { Routes } from '@angular/router';
 import { BuildingPage } from './product/building-page';
-import { ChatPage } from './product/chat-page';
 import { CreatorPage } from './product/creator-page';
 import { HomePage } from './product/home-page';
 import { MakePage } from './product/make-page';
@@ -18,7 +17,7 @@ export const routes: Routes = [
       { path: 'apps', component: ShelfPage, title: 'My apps' },
       { path: 'apps/:id', component: ManagePage, title: 'Manage app' },
       { path: 'creator', component: CreatorPage, title: 'Creator' },
-      { path: 'chat', component: ChatPage, title: 'Chat' },
+      { path: 'chat', redirectTo: 'apps', pathMatch: 'full' },
       { path: 'shared', redirectTo: '/apps', pathMatch: 'full' },
       { path: 'make/:id', component: MakePage, title: 'Describe' },
       { path: 'building/:id', component: BuildingPage, title: 'Making it' },

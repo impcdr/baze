@@ -37,20 +37,25 @@
     <div class="bz-reception__log">
       <div #thread class="bz-reception__log-inner" role="log" aria-label="Requirements">
         <ol class="flex flex-col gap-3 px-4 py-4">
-          @for (message of messages(); track message.id) {
-            <li class="flex" [class.justify-end]="message.role === 'user'">
-              <p class="bz-copy bg-background max-w-[85%] rounded-xl px-3.5 py-2 whitespace-pre-wrap">{{ message.content }}</p>
-            </li>
-          }
-          @for (step of steps(); track step.id) {
-            <li class="flex items-center gap-2">
-              @if (step.state === 'done') {
-                <ng-icon name="lucideCheck" class="text-success size-3.5" />
-              } @else {
-                <ng-icon name="lucideLoaderCircle" class="size-3.5 animate-spin" />
+          @for (entry of timeline(); track entry.id) {
+            @if (entry.kind === 'message' && entry.message; as message) {
+              <li class="flex" [class.justify-end]="message.role === 'user'">
+                <p class="bz-copy bg-background max-w-[85%] rounded-xl px-3.5 py-2 whitespace-pre-wrap">{{ message.content }}</p>
+              </li>
+            } @else if (entry.steps; as steps) {
+              @for (step of steps; track step.id) {
+                <li class="flex items-center gap-2">
+                  @if (step.state === 'done') {
+                    <ng-icon name="lucideCheck" class="text-success size-3.5" />
+                  } @else if (step.state === 'active') {
+                    <ng-icon name="lucideLoaderCircle" class="size-3.5 animate-spin" />
+                  } @else {
+                    <span class="border-muted-foreground/40 size-3.5 shrink-0 rounded-full border"></span>
+                  }
+                  <span class="bz-copy">{{ step.label }}</span>
+                </li>
               }
-              <span class="bz-copy">{{ step.label }}</span>
-            </li>
+            }
           }
           @if (sending()) {
             <li><span class="bz-copy shimmer text-muted-foreground">Thinking…</span></li>
@@ -59,31 +64,47 @@
       </div>
     </div>
 
+    <hlm-dialog [state]="picking() ? 'open' : 'closed'" (closed)="dismiss()">
+      <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+        <div hlmDialogHeader>
+          <h2 hlmDialogTitle class="font-display text-lg">Choose a box</h2>
+          @if (reason()) {
+            <p hlmDialogDescription class="bz-copy">{{ reason() }}</p>
+          }
+        </div>
+        <fieldset>
+          <legend class="sr-only">Choose a box</legend>
+          <div class="flex flex-col gap-2">
+            @for (box of boxes(); track box.id) {
+              <label class="bg-card ring-foreground flex cursor-pointer items-start gap-2 rounded-xl px-3 py-2" [class.ring-1]="chosen() === box.id">
+                <input class="mt-1" type="radio" name="box" [value]="box.id" [checked]="chosen() === box.id" [disabled]="making()" (change)="pickBox(box.id)" />
+                <span class="min-w-0">
+                  <span class="bz-copy block font-medium">{{ box.name }}@if (box.id === recommended()) { (Suggested)}</span>
+                  <span class="bz-copy text-muted-foreground block">{{ box.sentence }}</span>
+                </span>
+              </label>
+            }
+          </div>
+        </fieldset>
+        <button hlmBtn type="button" class="w-full" [disabled]="!chosen() || making()" (click)="confirm()">Make</button>
+      </hlm-dialog-content>
+    </hlm-dialog>
     <form class="bz-reception__form" (submit)="$event.preventDefault(); send()">
-      <div class="flex gap-1" [class.items-center]="!chatting()" [class.items-end]="chatting()">
+      <div class="flex min-h-10 min-w-0 items-end rounded-xl" [class.bg-card]="!chatting()" [class.bg-background]="chatting()">
         <label class="sr-only" for="creator-composer">Requirement</label>
         <textarea
           #composer
           id="creator-composer"
           rows="1"
-          class="bz-copy placeholder:text-muted-foreground max-h-40 min-h-10 flex-1 resize-none outline-none"
+          class="placeholder:text-muted-foreground max-h-40 min-h-10 min-w-0 flex-1 resize-none border-0 bg-transparent py-2.5 ps-3.5 pe-1 text-[length:var(--bz-text-meta)] leading-5 outline-none"
           placeholder="Describe an app in your own words."
           [value]="draft()"
           [disabled]="sending() || making()"
           (input)="onDraft($event)"
           (keydown)="onKeydown($event)"
         ></textarea>
-        <button
-          hlmBtn
-          type="submit"
-          size="icon"
-          class="bz-reception__send"
-          [class.is-ready]="!!draft().trim()"
-          [variant]="chatting() ? 'default' : 'ghost'"
-          aria-label="Send"
-          [disabled]="sending() || making() || !draft().trim()"
-        >
-          <ng-icon name="lucideArrowUp" />
+        <button type="submit" class="text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send" [disabled]="sending() || making() || !draft().trim()">
+          <ng-icon name="lucideArrowUp" class="size-4" />
         </button>
       </div>
     </form>

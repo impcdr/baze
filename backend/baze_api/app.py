@@ -5,7 +5,7 @@ from __future__ import annotations
 import falcon
 
 from baze_api.app_proxy import AppProxy
-from baze_api.middleware import AuthMiddleware, CorsMiddleware
+from baze_api.middleware import AuthMiddleware, CorsMiddleware, CurrentUserMiddleware
 from baze_api.product import (
     Account,
     Draft,
@@ -18,7 +18,11 @@ from baze_api.product import (
     SharedShelf,
     Shelf,
     AppBuild,
+    AppDecision,
+    AppFiles,
     AppManage,
+    AppShare,
+    AppPersist,
     AppPower,
     AppPrompt,
     AppRecord,
@@ -39,7 +43,7 @@ def create_app(settings: Settings | None = None, services: RuntimeServices | Non
     settings = settings or load_settings()
     services = services or RuntimeServices.production()
     ensure_seed(settings)
-    app = falcon.App(middleware=[CorsMiddleware(), AuthMiddleware(settings), AppProxy(settings)])
+    app = falcon.App(middleware=[CurrentUserMiddleware(), CorsMiddleware(), AuthMiddleware(settings), AppProxy(settings)])
     app.add_route("/api/health", Health(settings))
     app.add_route("/api", ServiceInfo())
     app.add_route("/api/account", Account(settings))
@@ -50,8 +54,12 @@ def create_app(settings: Settings | None = None, services: RuntimeServices | Non
     app.add_route("/api/shared", SharedShelf(settings))
     app.add_route("/api/apps/{app_id}/workspace", Workspace(settings))
     app.add_route("/api/apps/{app_id}/power/{action}", AppPower(settings, services.runner, services.healthy))
-    app.add_route("/api/apps/{app_id}/prompt", AppPrompt(settings, services.hermes))
+    app.add_route("/api/apps/{app_id}/prompt", AppPrompt(settings, services.hermes, services))
+    app.add_route("/api/apps/{app_id}/decisions", AppDecision(settings, services))
+    app.add_route("/api/apps/{app_id}/files", AppFiles(settings))
     app.add_route("/api/apps/{app_id}/manage", AppManage(settings))
+    app.add_route("/api/apps/{app_id}/share", AppShare(settings))
+    app.add_route("/api/apps/{app_id}/persist", AppPersist(settings))
     app.add_route("/api/apps/{app_id}/build", AppBuild(settings, services))
     app.add_route("/api/creator", Creator(settings))
     app.add_route("/api/creator/messages", CreatorMessages(settings, services))

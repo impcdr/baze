@@ -46,10 +46,17 @@ class RuntimeServices:
 
     @staticmethod
     def production() -> "RuntimeServices":
+        def infer(chat: list[dict]) -> str:
+            from baze_api.proxy import complete_chat
+            from baze_api.settings import load_settings
+
+            return complete_chat(load_settings(), chat)
+
         return RuntimeServices(
             DockerCli(),
             HermesClient(),
             lambda fn: threading.Thread(target=fn, name="baze-provision", daemon=True).start(),
+            infer=infer,
         )
 
 
@@ -67,12 +74,22 @@ def public_runtime_app(document: dict) -> dict:
 
 
 def public_turn(document: dict) -> dict:
-    return {
+    turn = {
         "id": document["_id"],
         "role": document["role"],
         "content": document["content"],
         "createdAt": document["createdAt"],
     }
+    if document.get("role") == "progress":
+        turn["state"] = document.get("state") or "waiting"
+        if document.get("stepId"):
+            turn["stepId"] = document["stepId"]
+    if document.get("decided"):
+        turn["decided"] = True
+        decision = document.get("decision")
+        if isinstance(decision, str) and decision.strip():
+            turn["decision"] = decision.strip()
+    return turn
 
 
 def _owner_id(settings: Settings) -> str:

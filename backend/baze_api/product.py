@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import re
+from pathlib import Path
 
 import falcon
 from pymongo.errors import PyMongoError
 
+from baze_api.activity import mark_working, working_turn
+from baze_api.boxes import BOXES, box_copy, box_prompt, known_profile, recommend_profile, settle_box_prompt, suggestion_reason
+
+log = logging.getLogger("baze.product")
 from baze_api.catalog import (
+    ACCOUNT_EMAILS,
+    ACCOUNTS,
     FEATURED_KEYS,
     HOME_COPY,
     PRESETS,
@@ -20,19 +28,43 @@ from baze_api.catalog import (
     live_path,
     preset,
 )
+from baze_api.identity import current_email
+from baze_api.chart import ask_chart, public_chart
 from baze_api.db import apps, drafts, messages, users
 from baze_api.hermes import HermesClient, HermesError
 from baze_api.http import clean_content, new_id, now_ms, read_json
+from baze_api.limits import TooMany, admin_code_matches, begin_start, release_hosted_reservation, release_turn, reserve_hosted
 from baze_api.runtime import public_turn
-from baze_api.proxy import InferenceError, complete_chat
+from baze_api.proxy import InferenceError, ModelLimitError, complete_chat
 from baze_api.provisioner import (
+    builder_voice,
+    profile_access,
     PowerError,
     begin_hosted_app,
     boot_hosted_app,
     build_in_container,
+    access_instruction,
+    apply_review,
     delete_shelf_app,
+    busy_progress,
+    record_progress,
+    _activate_plan,
+    _hold,
+    _mark_plan_done,
+    _park_plan,
+    _plan_stopped,
+    _stop_plan,
     start_catalog_app,
     stop_catalog_app,
+    stop_idle_progress,
+)
+from baze_api.supervisor import (
+    apply_form,
+    public_actions,
+    public_allowlist,
+    public_request,
+    public_sites,
+    revise_decision,
 )
 from baze_api.settings import Settings
 
@@ -74,6 +106,8 @@ def _guard(fn):
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
+        except TooMany as exc:
+            raise falcon.HTTPTooManyRequests(description=str(exc)) from exc
         except falcon.HTTPError:
             raise
         except PyMongoError as exc:
@@ -83,20 +117,116 @@ def _guard(fn):
 
 
 def signed_in_user(settings: Settings) -> dict:
-    document = users(settings).find_one({"email": USER_EMAIL})
+    email = current_email() or USER_EMAIL
+    if email not in ACCOUNT_EMAILS:
+        email = USER_EMAIL
+    document = users(settings).find_one({"email": email})
+    if document is None:
+        document = users(settings).find_one({"email": USER_EMAIL})
     if document is None:
         raise falcon.HTTPServiceUnavailable(description="Signed-in user is missing")
     return document
 
 
-def public_app(document: dict) -> dict:
+def _public_person(person: dict) -> dict:
+    return {
+        "name": person.get("name") or "",
+        "email": person.get("email") or "",
+        "initials": person.get("initials") or "",
+        "color": person.get("color") or "#334155",
+        "ink": person.get("ink") or "#ffffff",
+    }
+
+
+def public_account(settings: Settings, user: dict) -> dict:
+    found = {
+        person["email"]: person
+        for person in users(settings).find({"email": {"$in": list(ACCOUNT_EMAILS)}})
+    }
+    accounts = [_public_person(found[account["email"]]) for account in ACCOUNTS if account["email"] in found]
+    guest = next((account for account in ACCOUNTS if account["email"] != USER_EMAIL), None)
+    return {
+        "name": user["name"],
+        "initials": user["initials"],
+        "color": user["color"],
+        "ink": user["ink"],
+        "email": user["email"],
+        "studio": user.get("studio") or "",
+        "guest": user["email"] != USER_EMAIL,
+        "guestAccount": {"name": guest["name"], "email": guest["email"]} if guest else None,
+        "accounts": accounts,
+    }
+
+
+def _people(settings: Settings, document: dict) -> list[dict]:
+    ids = [document.get("ownerId"), *(document.get("sharedWith") or [])]
+    found = {person["_id"]: person for person in users(settings).find({"_id": {"$in": [item for item in ids if item]}})}
+    people = []
+    seen: set[str] = set()
+    for user_id in ids:
+        person = found.get(user_id)
+        if person is None or person["_id"] in seen:
+            continue
+        seen.add(person["_id"])
+        people.append(_public_person(person))
+    return people
+
+
+def public_app(document: dict, settings: Settings | None = None, *, shared_by: str | None = None) -> dict:
     payload = {"id": document["_id"]}
     for field in PUBLIC_APP_FIELDS:
         payload[field] = document.get(field)
     payload["runnable"] = bool((document.get("runtime") or {}).get("containerName"))
-    payload["deletable"] = not document.get("sharedBy")
+    payload["sharedBy"] = shared_by if shared_by is not None else document.get("sharedBy")
+    payload["deletable"] = shared_by is None and not document.get("sharedBy")
     payload["statusError"] = document.get("statusError")
+    payload["people"] = _people(settings, document) if settings is not None else []
+    payload["demo"] = bool(document.get("demo"))
+    payload["expiresAt"] = document.get("expiresAt")
     return payload
+
+
+def _load_app(settings: Settings, app_id: str, user: dict, *, owner_only: bool) -> dict:
+    document = apps(settings).find_one({"_id": _parse_app_id(app_id), "kind": {"$ne": "runtime"}})
+    if document is None:
+        raise falcon.HTTPNotFound(description="App not found")
+    if document.get("ownerId") == user["_id"]:
+        return document
+    shared = user["_id"] in (document.get("sharedWith") or [])
+    if shared and owner_only:
+        raise falcon.HTTPForbidden(description="You can use this app. You can't change it.")
+    if shared:
+        return document
+    raise falcon.HTTPNotFound(description="App not found")
+
+
+def _share_rows(settings: Settings, document: dict, _user: dict) -> list[dict]:
+    shared = set(document.get("sharedWith") or [])
+    owner_id = document.get("ownerId")
+    found = {
+        person["email"]: person
+        for person in users(settings).find({"email": {"$in": list(ACCOUNT_EMAILS)}})
+    }
+    rows = []
+    for account in ACCOUNTS:
+        person = found.get(account["email"])
+        if person is None:
+            continue
+        rows.append(
+            {
+                **_public_person(person),
+                "owner": person["_id"] == owner_id,
+                "shared": person["_id"] == owner_id or person["_id"] in shared,
+            }
+        )
+    return rows
+
+
+def _shared_by_name(settings: Settings, document: dict, user: dict) -> str | None:
+    if document.get("ownerId") == user["_id"]:
+        return None
+    owner = users(settings).find_one({"_id": document.get("ownerId")}, {"name": 1}) or {}
+    return owner.get("name") or ""
 
 
 def public_draft(document: dict) -> dict:
@@ -132,9 +262,28 @@ def _shelf(settings: Settings, status: str | None, *, shared: bool) -> dict:
     query = _catalog(user["_id"], shared=shared)
     if status and status != "all":
         query["status"] = status
-    documents = list(apps(settings).find(query).sort("sort", 1))
-    own = list(apps(settings).find(_catalog(user["_id"], shared=False)))
-    shared_docs = list(apps(settings).find(_catalog(user["_id"], shared=True)))
+    documents = [document for document in apps(settings).find(query).sort("sort", 1) if not _closed_check(document)]
+    own = [document for document in apps(settings).find(_catalog(user["_id"], shared=False)) if not _closed_check(document)]
+    check_docs = [
+        document
+        for document in apps(settings).find(_catalog(user["_id"], shared=False)).sort("sort", 1)
+        if _closed_check(document)
+    ]
+    shared_query: dict = {
+        "sharedWith": user["_id"],
+        "ownerId": {"$ne": user["_id"]},
+        "kind": {"$ne": "runtime"},
+    }
+    if status and status != "all":
+        shared_query["status"] = status
+    shared_docs = list(apps(settings).find(shared_query).sort("sort", 1))
+    owner_names = {
+        person["_id"]: person.get("name") or ""
+        for person in users(settings).find(
+            {"_id": {"$in": list({document.get("ownerId") for document in shared_docs})}},
+            {"name": 1},
+        )
+    }
     live = sum(1 for app in own if app.get("status") == "live")
     shared_count = len(shared_docs)
     page = {
@@ -147,12 +296,33 @@ def _shelf(settings: Settings, status: str | None, *, shared: bool) -> dict:
         "makeLabel": SHELF_COPY["makeLabel"],
         "filters": [] if shared else SHELF_COPY["filters"],
         "empty": SHELF_COPY["sharedEmpty"] if shared else SHELF_COPY["empty"],
-        "apps": [public_app(document) for document in documents],
+        "apps": [public_app(document, settings) for document in documents],
         "sharedTitle": SHELF_COPY["sharedTitle"],
         "sharedSummary": f"{shared_count} apps people shared with you",
-        "shared": [] if shared else [public_app(document) for document in shared_docs if not status or status == "all" or document.get("status") == status],
+        "shared": []
+        if shared
+        else [
+            public_app(document, settings, shared_by=owner_names.get(document.get("ownerId")))
+            for document in shared_docs
+        ],
+        "checks": [] if shared else [_public_check(document) for document in check_docs],
     }
     return page
+
+
+def _closed_check(document: dict) -> bool:
+    runtime = document.get("runtime") or {}
+    return runtime.get("profile") == "quarantine" and document.get("verdict") in {"clear", "suspicious"}
+
+
+def _public_check(document: dict) -> dict:
+    return {
+        "id": document["_id"],
+        "name": document.get("name") or "Check",
+        "specimen": document.get("specimen") or "No file was in the box.",
+        "verdict": document.get("verdict"),
+        "report": document.get("report") or "",
+    }
 
 
 def _load_draft(settings: Settings, draft_id: str, user_id: str) -> dict:
@@ -262,13 +432,18 @@ class Account:
     @_guard
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
         user = signed_in_user(self.settings)
-        resp.media = {
-            "name": user["name"],
-            "initials": user["initials"],
-            "color": user["color"],
-            "ink": user["ink"],
-            "email": user["email"],
-        }
+        resp.media = public_account(self.settings, user)
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response) -> None:
+        email = read_json(req).get("email")
+        if email not in ACCOUNT_EMAILS:
+            raise falcon.HTTPBadRequest(description="Choose an account on this shelf")
+        user = users(self.settings).find_one({"email": email})
+        if user is None:
+            raise falcon.HTTPNotFound(description="Account not found")
+        resp.set_cookie("baze_user", email, path="/", max_age=60 * 60 * 24 * 30, secure=False, http_only=True, same_site="Lax")
+        resp.media = public_account(self.settings, user)
 
 
 class Home:
@@ -283,7 +458,7 @@ class Home:
             for document in apps(self.settings).find(_catalog(user["_id"], shared=False))
             if document.get("draftKey")
         }
-        featured = [public_app(owned[key]) for key in FEATURED_KEYS if key in owned]
+        featured = [public_app(owned[key], self.settings) for key in FEATURED_KEYS if key in owned]
         own_count = apps(self.settings).count_documents(_catalog(user["_id"], shared=False))
         resp.media = {
             **HOME_COPY,
@@ -325,6 +500,8 @@ class AppPower:
 
     @_guard
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str, action: str) -> None:
+        user = signed_in_user(self.settings)
+        _load_app(self.settings, app_id, user, owner_only=True)
         try:
             if action == "start":
                 document = start_catalog_app(self.settings, _parse_app_id(app_id), self.runner, self.healthy)
@@ -338,55 +515,276 @@ class AppPower:
             if exc.code == "not_runnable":
                 raise falcon.HTTPConflict(description=str(exc)) from exc
             raise falcon.HTTPServiceUnavailable(description=str(exc)) from exc
-        resp.media = public_app(document)
+        resp.media = public_app(document, self.settings)
 
 
 class AppPrompt:
     """Hand a prompt to the app container. The harness calls back here for the model."""
 
-    def __init__(self, settings: Settings, hermes: HermesClient) -> None:
+    def __init__(self, settings: Settings, hermes: HermesClient, services=None) -> None:
         self.settings = settings
         self.hermes = hermes
+        self.services = services
 
     @_guard
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
-        document = apps(self.settings).find_one(
-            {"_id": _parse_app_id(app_id), "ownerId": user["_id"], "kind": {"$ne": "runtime"}}
-        )
-        if document is None:
-            raise falcon.HTTPNotFound(description="App not found")
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        runtime = document.get("runtime") or {}
+        if runtime.get("profile") == "quarantine" and document.get("verdict") in {"clear", "suspicious"}:
+            raise falcon.HTTPConflict(description="This check is finished.")
+        port = runtime.get("harnessPort")
+        key = runtime.get("apiServerKey")
+        if document.get("status") not in {"live", "attention"} or not isinstance(port, int) or not key:
+            raise falcon.HTTPConflict(description="This app is not ready for a prompt")
+        body = read_json(req)
+        content = clean_content(body.get("content"))
+        attached = _attachment_paths(document, body.get("attachments"))
+        profile = runtime.get("profile") if runtime.get("profile") in {"web", "data", "quarantine"} else None
+        lead = profile_access(self.settings, profile)
+        harness_content = f"{builder_voice()}\n\n{content}"
+        if lead:
+            harness_content = f"{lead}\n\n{harness_content}"
+        if attached:
+            harness_content = (
+                f"{harness_content}\n\nThe person attached:\n" + "\n".join(attached) + "\nUse these files. Do not run them."
+            )
+        visible = content if not attached else content + "\n" + "\n".join(Path(item).name for item in attached)
+        if body.get("to") == "supervisor" and not content:
+            raise falcon.HTTPBadRequest(description="Write a message")
+        begin_start(self.settings, req.remote_addr or "")
+        try:
+            if body.get("to") == "supervisor":
+                stamp = now_ms()
+                messages(self.settings).insert_one(
+                    {"_id": new_id(), "appId": document["_id"], "role": "user", "content": content, "createdAt": stamp}
+                )
+                infer = getattr(self.services, "infer", None) if self.services is not None else None
+                sentence = revise_decision(self.settings, document["_id"], content, infer)
+                resp.media = {"reply": sentence}
+                return
+            session_id = (document.get("chat") or {}).get("hermesSessionId")
+            stamp = now_ms()
+            user_turn = {"_id": new_id(), "appId": document["_id"], "role": "user", "content": visible, "createdAt": stamp}
+            messages(self.settings).insert_one(user_turn)
+            progress_ids: list[str] = []
+            finished = False
+            try:
+                with busy_progress(document["_id"]):
+                    with working_turn(self.settings, document["_id"]):
+                        try:
+                            tasks = self._big_tasks(visible)
+                            if tasks:
+                                steps = [
+                                    {"id": f"work-{user_turn['_id']}-{index}", "label": label, "state": "active"}
+                                    for index, label in enumerate(tasks)
+                                ]
+                                record_progress(self.settings, document["_id"], steps, stamp + 1)
+                                progress_ids = [step["id"] for step in steps]
+                            reply, session = self.hermes.complete(
+                                base_url=f"http://127.0.0.1:{port}",
+                                api_key=key,
+                                content=harness_content,
+                                session_id=session_id,
+                            )
+                            if progress_ids:
+                                messages(self.settings).update_many(
+                                    {"appId": document["_id"], "role": "progress", "stepId": {"$in": progress_ids}},
+                                    {"$set": {"state": "done"}},
+                                )
+                            finished = True
+                        except HermesError:
+                            raise
+                        finally:
+                            if progress_ids and not finished:
+                                messages(self.settings).update_many(
+                                    {"appId": document["_id"], "role": "progress", "stepId": {"$in": progress_ids}},
+                                    {"$set": {"state": "stopped"}},
+                                )
+                        assistant = {
+                            "_id": new_id(),
+                            "appId": document["_id"],
+                            "role": "assistant",
+                            "content": reply,
+                            "createdAt": stamp + len(progress_ids) + 1,
+                        }
+                        messages(self.settings).insert_one(assistant)
+                        apps(self.settings).update_one(
+                            {"_id": document["_id"]},
+                            {"$set": {"chat.hermesSessionId": session, "updatedAt": stamp}},
+                        )
+                        ask_chart(
+                            self.settings,
+                            document["_id"],
+                            self.hermes,
+                            base_url=f"http://127.0.0.1:{port}",
+                            api_key=key,
+                            session_id=session,
+                        )
+                        _settle(self.settings, self.services, document)
+                        resp.media = {"reply": reply, "message": public_turn(assistant)}
+            except HermesError as exc:
+                self._drop_attempt(document["_id"], user_turn["_id"], progress_ids)
+                raise falcon.HTTPBadGateway(description=str(exc)) from exc
+        finally:
+            release_turn()
+
+    def _big_tasks(self, brief: str) -> list[str]:
+        infer = getattr(self.services, "infer", None) if self.services is not None else None
+        if infer is None:
+            return []
+        try:
+            text = infer(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You list the big tasks for a change to an existing app. "
+                            "Reply with one short step per line and nothing else. "
+                            "If the change is tiny, reply with none."
+                        ),
+                    },
+                    {"role": "user", "content": brief},
+                ]
+            )
+        except Exception:
+            return []
+        if not isinstance(text, str):
+            return []
+        return _task_lines(text)
+
+    def _drop_attempt(self, app_id: str, user_id: str, progress_ids: list[str]) -> None:
+        messages(self.settings).delete_one({"_id": user_id})
+        if progress_ids:
+            messages(self.settings).delete_many(
+                {"appId": app_id, "role": "progress", "stepId": {"$in": progress_ids}}
+            )
+
+
+def _settle(settings: Settings, services, document: dict) -> None:
+    infer = getattr(services, "infer", None) if services is not None else None
+    runner = getattr(services, "runner", None) if services is not None else None
+    apply_review(settings, document["_id"], runner, infer)
+
+
+def resume_decided_plan(settings: Settings, services, app_id: str) -> None:
+    """Pick up a plan that was parked for a decision, after that decision was already made."""
+    document = apps(settings).find_one({"_id": app_id})
+    if document is None:
+        return
+    runtime = document.get("runtime") or {}
+    port = runtime.get("harnessPort")
+    key = runtime.get("apiServerKey")
+    if document.get("status") not in {"live", "attention"} or not isinstance(port, int) or not key:
+        return
+    _park_plan(settings, app_id)
+    document = apps(settings).find_one({"_id": app_id}) or document
+    steps = (document.get("build") or {}).get("steps") or []
+    if not any(str(step.get("id", "")).startswith("plan") and step.get("state") == "waiting" for step in steps):
+        return
+    allowed, refused = public_allowlist(document)
+    AppDecision(settings, services)._run(document, port, key, allowed, refused, now_ms())
+
+
+class AppDecision:
+    """The person picks a supervisor action. The harness applies that fix."""
+
+    def __init__(self, settings: Settings, services) -> None:
+        self.settings = settings
+        self.services = services
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
         runtime = document.get("runtime") or {}
         port = runtime.get("harnessPort")
         key = runtime.get("apiServerKey")
-        if document.get("status") != "live" or not isinstance(port, int) or not key:
+        if document.get("status") not in {"live", "attention"} or not isinstance(port, int) or not key:
             raise falcon.HTTPConflict(description="This app is not ready for a prompt")
-        content = clean_content(read_json(req).get("content"))
+        body = read_json(req)
+        if body.get("allow") is True or body.get("allow") is False:
+            if box_prompt(document) is None:
+                raise falcon.HTTPConflict(description="There is nothing to decide.")
+            try:
+                sentence = settle_box_prompt(self.settings, document["_id"], bool(body.get("allow")))
+            except RuntimeError as exc:
+                raise falcon.HTTPBadGateway(description=str(exc)) from exc
+            if body.get("allow") is True:
+                self._start(document, port, key, [], [], now_ms())
+            resp.media = {"reply": sentence}
+            return
+        hosts = body.get("hosts")
+        if not isinstance(hosts, list) or len(hosts) > 40:
+            raise falcon.HTTPBadRequest(description="Choose the sites to approve")
+        stamp = now_ms()
+        try:
+            sentence, allowed, refused = apply_form(self.settings, document["_id"], hosts, stamp)
+        except RuntimeError as exc:
+            raise falcon.HTTPBadGateway(description=str(exc)) from exc
+        self._start(document, port, key, allowed, refused, stamp + 1)
+        resp.media = {"reply": sentence}
+
+    def _start(self, document: dict, port: int, key: str, allowed: list[str], refused: list[str], at: int) -> None:
+        """The decision is saved. The turn itself runs behind the request."""
+        mark_working(self.settings, document["_id"])
+        _activate_plan(self.settings, document["_id"])
+        self.services.spawn(lambda: self._run(document, port, key, allowed, refused, at))
+
+    def _run(self, document: dict, port: int, key: str, allowed: list[str], refused: list[str], at: int) -> None:
+        """Hand the decision back as JSON. The builder is not told about the gate."""
+        if not allowed and not refused:
+            content = "You allowed it. Continue."
+        else:
+            content = json.dumps({"allowed": allowed, "refused": refused}, ensure_ascii=True)
+            content = f"{content}\nContinue. Contact only allowed sites. Keep the app useful without the refused ones."
         session_id = (document.get("chat") or {}).get("hermesSessionId")
         try:
-            reply, session = self.hermes.complete(
-                base_url=f"http://127.0.0.1:{port}",
-                api_key=key,
-                content=content,
-                session_id=session_id,
-            )
-        except HermesError as exc:
-            raise falcon.HTTPBadGateway(description=str(exc)) from exc
-        stamp = now_ms()
-        user_turn = {"_id": new_id(), "appId": document["_id"], "role": "user", "content": content, "createdAt": stamp}
-        assistant = {
-            "_id": new_id(),
-            "appId": document["_id"],
-            "role": "assistant",
-            "content": reply,
-            "createdAt": stamp + 1,
-        }
-        messages(self.settings).insert_many([user_turn, assistant])
-        apps(self.settings).update_one(
-            {"_id": document["_id"]},
-            {"$set": {"chat.hermesSessionId": session, "updatedAt": stamp}},
-        )
-        resp.media = {"reply": reply, "message": public_turn(assistant)}
+            with working_turn(self.settings, document["_id"]):
+                with busy_progress(document["_id"]):
+                    _activate_plan(self.settings, document["_id"])
+                    try:
+                        reply, session = self.services.hermes.complete(
+                            base_url=f"http://127.0.0.1:{port}",
+                            api_key=key,
+                            content=content,
+                            session_id=session_id,
+                        )
+                    except HermesError:
+                        log.exception("App %s stopped before the turn finished", document["_id"])
+                        _stop_plan(self.settings, document["_id"])
+                        _hold(self.settings, document["_id"])
+                        return
+                    _mark_plan_done(self.settings, document["_id"])
+                    if _plan_stopped(self.settings, document["_id"]):
+                        _hold(self.settings, document["_id"])
+                        return
+                    messages(self.settings).insert_one(
+                        {
+                            "_id": new_id(),
+                            "appId": document["_id"],
+                            "role": "assistant",
+                            "content": reply,
+                            "createdAt": now_ms(),
+                        }
+                    )
+                    apps(self.settings).update_one(
+                        {"_id": document["_id"]},
+                        {"$set": {"chat.hermesSessionId": session, "updatedAt": at}},
+                    )
+                    ask_chart(
+                        self.settings,
+                        document["_id"],
+                        self.services.hermes,
+                        base_url=f"http://127.0.0.1:{port}",
+                        api_key=key,
+                        session_id=session,
+                    )
+                    _settle(self.settings, self.services, document)
+        except Exception:
+            log.exception("App %s stopped before the turn finished", document["_id"])
+            _stop_plan(self.settings, document["_id"])
+            _hold(self.settings, document["_id"])
 
 
 class AppManage:
@@ -396,13 +794,33 @@ class AppManage:
     @_guard
     def on_get(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
-        document = apps(self.settings).find_one(
-            {"_id": _parse_app_id(app_id), "ownerId": user["_id"], "kind": {"$ne": "runtime"}}
-        )
-        if document is None:
-            raise falcon.HTTPNotFound(description="App not found")
+        document = _load_app(self.settings, app_id, user, owner_only=False)
         runtime = document.get("runtime") or {}
-        turns = messages(self.settings).find({"appId": document["_id"]}).sort("createdAt", 1)
+        turns = list(messages(self.settings).find({"appId": document["_id"]}).sort("createdAt", 1))
+        steps = [dict(step) for step in (document.get("build") or {}).get("steps") or []]
+        if steps and any(not isinstance(step.get("createdAt"), int) for step in steps):
+            spoken = [turn for turn in turns if turn.get("role") in ("user", "assistant")]
+            at = _steps_appeared_at(document, spoken)
+            steps = [
+                {**step, "createdAt": step["createdAt"] if isinstance(step.get("createdAt"), int) else at}
+                for step in steps
+            ]
+            apps(self.settings).update_one({"_id": document["_id"]}, {"$set": {"build.steps": steps}})
+        turns = _ensure_progress_chat(self.settings, document, steps, turns)
+        stop_idle_progress(self.settings, document["_id"])
+        if any(turn.get("role") == "progress" and turn.get("state") == "active" for turn in turns):
+            fresh = {
+                doc["_id"]: doc.get("state")
+                for doc in messages(self.settings).find(
+                    {"appId": document["_id"], "role": "progress"}, {"state": 1}
+                )
+            }
+            turns = [
+                {**turn, "state": fresh.get(turn["_id"], turn.get("state"))} if turn.get("role") == "progress" else turn
+                for turn in turns
+            ]
+        flow, record = public_chart(document)
+        allowed, closed = public_allowlist(document)
         resp.media = {
             "id": document["_id"],
             "name": document.get("name"),
@@ -415,12 +833,110 @@ class AppManage:
             "color": document.get("color"),
             "icon": document.get("icon"),
             "runnable": bool(runtime.get("containerName")),
-            "deletable": not document.get("sharedBy"),
+            "deletable": document.get("ownerId") == user["_id"] and not document.get("sharedBy"),
+            "canPrompt": document.get("ownerId") == user["_id"] and not _closed_check(document),
+            "sharedBy": _shared_by_name(self.settings, document, user),
+            "shares": _share_rows(self.settings, document, user),
             "statusError": document.get("statusError"),
             "boxReady": bool(runtime.get("boxReady")),
-            "steps": (document.get("build") or {}).get("steps") or [],
+            "working": bool(runtime.get("working")),
+            "activity": runtime.get("activity") if isinstance(runtime.get("activity"), str) else "",
+            "steps": steps,
             "messages": [public_turn(turn) for turn in turns],
+            "flow": flow,
+            "record": record,
+            "actions": public_actions(document),
+            "sites": public_sites(document),
+            "request": public_request(document),
+            "allowed": allowed,
+            "closed": closed,
+            "demo": bool(document.get("demo")),
+            "expiresAt": document.get("expiresAt"),
+            "box": box_copy(runtime["profile"]) if runtime.get("profile") in {"web", "data", "quarantine"} else None,
+            "boxPrompt": (box_prompt(document) or {}).get("text") or None,
+            "check": runtime.get("profile") == "quarantine",
         }
+
+
+_FILE_LIMIT = 4 * 1024 * 1024
+
+
+def _attachment_paths(document: dict, names: object) -> list[str]:
+    if not names:
+        return []
+    if not isinstance(names, list) or len(names) > 4:
+        raise falcon.HTTPBadRequest(description="Attach up to 4 files")
+    data_dir = (document.get("runtime") or {}).get("dataDir")
+    if not isinstance(data_dir, str) or not data_dir:
+        raise falcon.HTTPConflict(description="This app is not ready for a file")
+    root = Path(data_dir) / "uploads"
+    paths = []
+    for name in names:
+        if not isinstance(name, str) or not name or name != Path(name).name or name in {".", ".."}:
+            raise falcon.HTTPBadRequest(description="A file name is not valid")
+        if not (root / name).is_file():
+            raise falcon.HTTPBadRequest(description="A file is missing")
+        paths.append(f"/opt/data/uploads/{name}")
+    return paths
+
+
+def _save_uploads(directory: Path, form) -> list[dict]:
+    saved = []
+    for part in form:
+        if getattr(part, "name", None) != "file":
+            continue
+        if len(saved) >= 4:
+            raise falcon.HTTPBadRequest(description="Attach up to 4 files")
+        try:
+            name = part.secure_filename
+        except ValueError as exc:
+            raise falcon.HTTPBadRequest(description="A file name is not valid") from exc
+        if not name or name in {".", ".."} or "/" in name or "\\" in name:
+            raise falcon.HTTPBadRequest(description="A file name is not valid")
+        payload = part.stream.read(_FILE_LIMIT + 1)
+        if len(payload) > _FILE_LIMIT:
+            raise falcon.HTTPBadRequest(description="A file is too large")
+        directory.mkdir(parents=True, exist_ok=True)
+        target = _unused_path(directory, name)
+        target.write_bytes(payload)
+        saved.append({"name": target.name, "path": f"/opt/data/uploads/{target.name}"})
+    if not saved:
+        raise falcon.HTTPBadRequest(description="Choose a file")
+    return saved
+
+
+def _unused_path(directory: Path, name: str) -> Path:
+    candidate = directory / name
+    if not candidate.exists():
+        return candidate
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    for number in range(2, 20):
+        candidate = directory / f"{stem}-{number}{suffix}"
+        if not candidate.exists():
+            return candidate
+    raise falcon.HTTPConflict(description="That file is already here")
+
+
+class AppFiles:
+    """Store files the person brings into the app chat. Nothing here is executed."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        data_dir = (document.get("runtime") or {}).get("dataDir")
+        if not isinstance(data_dir, str) or not data_dir:
+            raise falcon.HTTPConflict(description="This app is not ready for a file")
+        directory = Path(data_dir) / "uploads"
+        try:
+            saved = _save_uploads(directory, req.get_media())
+        except falcon.MediaMalformedError as exc:
+            raise falcon.HTTPBadRequest(description="The files were not readable") from exc
+        resp.media = {"files": saved}
 
 
 class AppRecord:
@@ -430,6 +946,11 @@ class AppRecord:
 
     @_guard
     def on_delete(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        _load_app(self.settings, app_id, user, owner_only=True)
+        code = read_json(req).get("code")
+        if not isinstance(code, str) or not admin_code_matches(self.settings, code):
+            raise falcon.HTTPForbidden(description="That code does not delete this app")
         try:
             delete_shelf_app(self.settings, _parse_app_id(app_id), self.services.runner)
         except PowerError as exc:
@@ -660,6 +1181,7 @@ RECEPTION = (
     "Ask only what changes the app. Do not write the app, and do not mention how it is hosted. "
     "If they name a color, remember it. Do not suggest one yourself. "
     "When the requirements are clear, tell them they can press Make. "
+    "Do not name a box. "
     "Reply in plain sentences, without markdown."
 )
 PLAN_REQUEST = "List 3 to 6 short steps to build this app. One step per line. No numbers and no extra text."
@@ -774,30 +1296,72 @@ def _refresh_sketch(settings: Settings, services, turns: list[dict]) -> dict:
 
 
 def _creator_media(settings: Settings) -> dict:
+    turns = _creator_turns(settings)
+    text = "\n".join(turn.get("content") or "" for turn in turns if turn.get("role") == "user")
+    sketch = _load_sketch(settings)
+    profile = recommend_profile(text)
     return {
-        "messages": [public_turn(turn) for turn in _creator_turns(settings)],
-        "sketch": _load_sketch(settings),
+        "messages": [public_turn(turn) for turn in turns],
+        "sketch": sketch,
+        "boxes": [dict(box) for box in BOXES],
+        "recommended": profile,
+        "reason": suggestion_reason(profile, sketch.get("summary") or text),
     }
 
 
 def _plan_lines(text: str) -> list[str]:
+    return _task_lines(text)[:6] or ["Write the app", "Save it in the box"]
+
+
+def _task_lines(text: str) -> list[str]:
+    if text.strip().lower() in {"none", "nothing", "n/a"}:
+        return []
     lines = []
     for raw in text.splitlines():
         cleaned = raw.strip().lstrip("-*").strip()
         cleaned = cleaned.lstrip("0123456789.").strip()
-        if cleaned:
+        if cleaned and cleaned.lower() not in {"none", "nothing"}:
             lines.append(cleaned[:80])
-    return lines[:6] or ["Write the app", "Save it in the box"]
+    return lines[:6]
 
 
-def _provision_steps(plan: list[str]) -> list[dict]:
-    steps = [
-        {"id": "create", "label": "Creating the container", "state": "waiting"},
-        {"id": "start", "label": "Starting the box", "state": "waiting"},
-        {"id": "harness", "label": "Opening the harness", "state": "waiting"},
-    ]
-    steps.extend({"id": f"plan-{index}", "label": label, "state": "waiting"} for index, label in enumerate(plan))
+def _ensure_progress_chat(settings: Settings, document: dict, steps: list[dict], turns: list[dict]) -> list[dict]:
+    """Older builds kept tasks on the app. Copy them into the chat at the time they appeared."""
+    if not steps or any(turn.get("role") == "progress" for turn in turns):
+        return turns
+    spoken = [turn for turn in turns if turn.get("role") in ("user", "assistant")]
+    base = next((step.get("createdAt") for step in steps if isinstance(step.get("createdAt"), int)), None)
+    at = base if isinstance(base, int) else _steps_appeared_at(document, spoken)
+    record_progress(settings, document["_id"], steps, at)
+    return list(messages(settings).find({"appId": document["_id"]}).sort("createdAt", 1))
+
+
+def _provision_steps(plan: list[str], at: int) -> list[dict]:
+    fixed = (
+        ("create", "Creating the container"),
+        ("start", "Starting the box"),
+        ("harness", "Opening the harness"),
+    )
+    steps = [{"id": step_id, "label": label, "state": "waiting", "createdAt": at} for step_id, label in fixed]
+    steps.extend(
+        {"id": f"plan-{index}", "label": label, "state": "waiting", "createdAt": at}
+        for index, label in enumerate(plan)
+    )
     return steps
+
+
+def _steps_appeared_at(document: dict, turns: list[dict]) -> int:
+    """Where an older step list belongs: just after the reception burst, before later chat."""
+    times = [turn["createdAt"] for turn in turns if isinstance(turn.get("createdAt"), int)]
+    created = document.get("createdAt") if isinstance(document.get("createdAt"), int) else 0
+    if not times:
+        return created or now_ms()
+    burst_end = times[0]
+    for previous, current in zip(times, times[1:]):
+        if current - previous > 5000:
+            break
+        burst_end = current
+    return burst_end + 1
 
 
 class Creator:
@@ -827,6 +1391,9 @@ class CreatorMessages:
         history.append({"role": "user", "content": content})
         try:
             reply = _ask_model(self.settings, self.services, history)
+        except ModelLimitError as exc:
+            messages(self.settings).delete_one({"_id": user_turn["_id"]})
+            raise falcon.HTTPTooManyRequests(description=str(exc)) from exc
         except InferenceError as exc:
             messages(self.settings).delete_one({"_id": user_turn["_id"]})
             raise falcon.HTTPBadGateway(description=str(exc)) from exc
@@ -862,53 +1429,99 @@ class CreatorMake:
         prompt = next((turn["content"] for turn in turns if turn.get("role") == "user"), "")
         if not prompt:
             raise falcon.HTTPBadRequest(description="Tell the reception what to make first")
-        plan_messages = [
-            {"role": "system", "content": "You write build plans. Reply with one short step per line and nothing else."},
-            *({"role": turn["role"], "content": turn["content"]} for turn in turns),
-            {"role": "user", "content": PLAN_REQUEST},
-        ]
+        begin_start(self.settings, req.remote_addr or "")
+        handed = False
         try:
-            plan = _plan_lines(_ask_model(self.settings, self.services, plan_messages))
-        except InferenceError as exc:
-            raise falcon.HTTPBadGateway(description=str(exc)) from exc
-        document = begin_hosted_app(self.settings, user["_id"], prompt)
-        app_id = document["_id"]
-        sketch = _load_sketch(self.settings)
-        named = {}
-        if sketch["name"]:
-            named["name"] = sketch["name"]
-        if sketch["summary"]:
-            named["summary"] = sketch["summary"]
-            named["detail"] = sketch["summary"]
-        if sketch["icon"]:
-            named["icon"] = sketch["icon"]
-        if sketch["color"]:
-            named["color"] = sketch["color"]
-        if named:
-            apps(self.settings).update_one({"_id": app_id}, {"$set": named})
-        stamp = now_ms()
-        copies = [
-            {
-                "_id": new_id(),
-                "appId": app_id,
-                "role": turn["role"],
-                "content": turn["content"],
-                "createdAt": stamp + index,
-            }
-            for index, turn in enumerate(turns)
-        ]
-        if copies:
-            messages(self.settings).insert_many(copies)
-        messages(self.settings).delete_many({"appId": CREATOR_ID})
-        steps = _provision_steps(plan)
-        apps(self.settings).update_one({"_id": app_id}, {"$set": {"build.steps": steps, "prompt": prompt}})
-        self.services.spawn(
-            lambda app_id=app_id: boot_hosted_app(
-                self.settings, app_id, self.services.runner, self.services.healthy
-            )
-        )
-        resp.status = falcon.HTTP_201
-        resp.media = {"id": app_id, "steps": steps, "boxReady": False}
+            reserve_hosted(self.settings)
+            try:
+                plan_messages = [
+                    {"role": "system", "content": "You write build plans. Reply with one short step per line and nothing else."},
+                    *({"role": turn["role"], "content": turn["content"]} for turn in turns),
+                    {"role": "user", "content": PLAN_REQUEST},
+                ]
+                try:
+                    plan = _plan_lines(_ask_model(self.settings, self.services, plan_messages))
+                except ModelLimitError as exc:
+                    raise falcon.HTTPTooManyRequests(description=str(exc)) from exc
+                except InferenceError as exc:
+                    raise falcon.HTTPBadGateway(description=str(exc)) from exc
+                chosen = known_profile(read_json(req).get("profile"))
+                if chosen is None:
+                    raise falcon.HTTPBadRequest(description="Choose a box")
+                document = begin_hosted_app(self.settings, user["_id"], prompt, chosen)
+            finally:
+                release_hosted_reservation()
+            app_id = document["_id"]
+            sketch = _load_sketch(self.settings)
+            named = {}
+            if sketch["name"]:
+                named["name"] = sketch["name"]
+            if sketch["summary"]:
+                named["summary"] = sketch["summary"]
+                named["detail"] = sketch["summary"]
+            if sketch["icon"]:
+                named["icon"] = sketch["icon"]
+            if sketch["color"]:
+                named["color"] = sketch["color"]
+            if named:
+                apps(self.settings).update_one({"_id": app_id}, {"$set": named})
+            stamp = now_ms()
+            copies = [
+                {
+                    "_id": new_id(),
+                    "appId": app_id,
+                    "role": turn["role"],
+                    "content": turn["content"],
+                    "createdAt": stamp + index,
+                }
+                for index, turn in enumerate(turns)
+            ]
+            if copies:
+                messages(self.settings).insert_many(copies)
+            messages(self.settings).delete_many({"appId": CREATOR_ID})
+            steps = _provision_steps(plan, stamp + len(copies))
+            record_progress(self.settings, app_id, steps, stamp + len(copies))
+            apps(self.settings).update_one({"_id": app_id}, {"$set": {"build.steps": steps, "prompt": prompt}})
+
+            def run(app_id: str = app_id) -> None:
+                try:
+                    boot_hosted_app(self.settings, app_id, self.services.runner, self.services.healthy)
+                except Exception:
+                    log.exception("App %s did not finish starting", app_id)
+                finally:
+                    release_turn()
+
+            self.services.spawn(run)
+            handed = True
+            resp.status = falcon.HTTP_201
+            resp.media = {"id": app_id, "steps": steps, "boxReady": False}
+        finally:
+            if not handed:
+                release_turn()
+
+
+class AppShare:
+    """Let another account open the app without asking the builder to change it."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        body = read_json(req)
+        email = body.get("email")
+        shared = body.get("shared")
+        if email not in ACCOUNT_EMAILS or not isinstance(shared, bool):
+            raise falcon.HTTPBadRequest(description="Choose who can open this app")
+        person = users(self.settings).find_one({"email": email})
+        if person is None or person["_id"] == user["_id"]:
+            raise falcon.HTTPBadRequest(description="Choose someone else")
+        change = {"$addToSet": {"sharedWith": person["_id"]}} if shared else {"$pull": {"sharedWith": person["_id"]}}
+        apps(self.settings).update_one({"_id": document["_id"]}, change)
+        document = apps(self.settings).find_one({"_id": document["_id"]}) or document
+        resp.media = {"shares": _share_rows(self.settings, document, user)}
 
 
 class AppBuild:
@@ -918,11 +1531,9 @@ class AppBuild:
 
     @_guard
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
-        signed_in_user(self.settings)
-        app_id = _parse_app_id(app_id)
-        document = apps(self.settings).find_one({"_id": app_id, "kind": {"$ne": "runtime"}})
-        if document is None:
-            raise falcon.HTTPNotFound(description="App not found")
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        app_id = document["_id"]
         if not (document.get("runtime") or {}).get("boxReady"):
             raise falcon.HTTPConflict(description="The container is not ready")
         if document.get("status") != "live":
@@ -931,14 +1542,47 @@ class AppBuild:
                 {"$set": {"runtime.buildStarted": True, "updatedAt": now_ms()}},
             )
             if claimed.modified_count and self.services is not None:
-                self.services.spawn(
-                    lambda app_id=app_id: build_in_container(
-                        self.settings,
-                        app_id,
-                        self.services.runner,
-                        self.services.hermes,
-                        self.services.healthy,
-                    )
-                )
+                begin_start(self.settings, req.remote_addr or "")
+
+                def run(app_id: str = app_id) -> None:
+                    try:
+                        build_in_container(
+                            self.settings,
+                            app_id,
+                            self.services.runner,
+                            self.services.hermes,
+                            self.services.healthy,
+                            self.services.infer,
+                        )
+                    except Exception:
+                        log.exception("App %s did not finish building", app_id)
+                    finally:
+                        release_turn()
+
+                try:
+                    self.services.spawn(run)
+                except Exception:
+                    release_turn()
+                    raise
         resp.status = falcon.HTTP_202
         resp.media = {"id": app_id}
+
+
+class AppPersist:
+    """Turn a temporary app into a demo app when the admin code matches."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        code = read_json(req).get("code")
+        if not isinstance(code, str) or not admin_code_matches(self.settings, code):
+            raise falcon.HTTPForbidden(description="That code does not persist this app")
+        apps(self.settings).update_one(
+            {"_id": document["_id"]},
+            {"$set": {"demo": True, "updatedAt": now_ms()}, "$unset": {"expiresAt": ""}},
+        )
+        resp.media = {"demo": True, "expiresAt": None}

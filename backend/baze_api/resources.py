@@ -60,7 +60,6 @@ class ServiceInfo:
             "name": "baze",
             "auth": "Authorization: Bearer <API_TOKEN from /home/agent/.env>",
             "frontend": "/",
-            "chat": "/chat",
             "endpoints": [
                 {"method": "GET", "path": "/api/health", "auth": False},
                 {"method": "GET", "path": "/api/conversations", "auth": True},

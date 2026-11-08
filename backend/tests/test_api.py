@@ -14,7 +14,7 @@ def test_health_and_discovery(client):
 
     info = testing.TestClient(client).simulate_get("/api")
     assert info.status_code == 200
-    assert info.json["chat"] == "/chat"
+    assert "chat" not in info.json
     assert any(item["path"] == "/api/conversations" for item in info.json["endpoints"])
 
 

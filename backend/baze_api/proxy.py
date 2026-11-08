@@ -11,12 +11,14 @@ from urllib.request import Request, urlopen
 
 from baze_api.db import apps
 from baze_api.docker import bridge_gateway
+from baze_api.limits import MODEL_LIMIT, take_model_call
 from baze_api.settings import Settings
 
 log = logging.getLogger("baze.proxy")
 
 CHAT_PATH = "/v1/chat/completions"
 MODELS_PATH = "/v1/models"
+ACCESS_PATH = "/v1/access"
 
 
 def token_from(headers: dict[str, str]) -> str:
@@ -71,6 +73,8 @@ def proxy_request(
     if method == "GET" and path == MODELS_PATH:
         payload = models_body(settings)
         return 200, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
+    if method == "POST" and path == ACCESS_PATH:
+        return _access(settings, headers, body)
     if method != "POST" or path != CHAT_PATH:
         return 404, {"Content-Type": "application/json"}, b'{"error":"not found"}'
     if not settings.vultr_api_key:
@@ -79,6 +83,9 @@ def proxy_request(
         url, upstream_headers, upstream_body = prepare_upstream(settings, body)
     except (UnicodeError, json.JSONDecodeError, ValueError):
         return 400, {"Content-Type": "application/json"}, b'{"error":"expected a JSON object"}'
+    if not take_model_call(settings):
+        payload = json.dumps({"error": MODEL_LIMIT}).encode("utf-8")
+        return 429, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
     if forward is None:
         return _forward(url, upstream_headers, upstream_body)
     status, response_headers, response_body = forward(url, upstream_headers, upstream_body)
@@ -89,6 +96,10 @@ class InferenceError(RuntimeError):
     pass
 
 
+class ModelLimitError(InferenceError):
+    """The daily completion budget is spent."""
+
+
 def complete_chat(settings: Settings, messages: list[dict]) -> str:
     """Call Vultr from this process. The browser never sees the key."""
     if not settings.vultr_api_key:
@@ -97,6 +108,8 @@ def complete_chat(settings: Settings, messages: list[dict]) -> str:
         url, headers, payload = prepare_upstream(settings, json.dumps({"messages": messages}).encode("utf-8"))
     except (UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise InferenceError("The model did not answer") from exc
+    if not take_model_call(settings):
+        raise ModelLimitError(MODEL_LIMIT)
     status, _, raw = _forward(url, headers, payload)
     if status != 200:
         raise InferenceError("The model did not answer")
@@ -118,6 +131,23 @@ def _forward(url: str, headers: dict[str, str], body: bytes) -> tuple[int, dict[
         return exc.code, {"Content-Type": "application/json"}, exc.read()
     except URLError:
         return 502, {"Content-Type": "application/json"}, b'{"error":"upstream unavailable"}'
+
+
+def _access(settings: Settings, headers: dict[str, str], body: bytes) -> tuple[int, dict[str, str], bytes]:
+    """Hermes asks for websites here. The body is a form, not a chat message."""
+    from baze_api.supervisor import parse_access_form, submit_access
+
+    token = token_from(headers)
+    document = apps(settings).find_one({"runtime.proxyToken": token}, {"_id": 1}) if token else None
+    if document is None:
+        return 401, {"Content-Type": "application/json"}, b'{"error":"proxy token required"}'
+    try:
+        sites = parse_access_form(json.loads(body.decode("utf-8")) if body else None)
+    except (UnicodeError, json.JSONDecodeError, ValueError):
+        return 400, {"Content-Type": "application/json"}, b'{"error":"expected sites with a host and a why"}'
+    submit_access(settings, document["_id"], sites)
+    payload = b'{"ok":true}'
+    return 200, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
 
 
 def db_token_ok(settings: Settings, token: str) -> bool:
@@ -160,6 +190,25 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
+_BOUND: set[str] = set()
+
+
+def bind_proxy(settings: Settings, host: str) -> None:
+    """Listen on a box-network gateway so the agent can reach the model from that network."""
+    if not host or host in _BOUND or not settings.vultr_api_key:
+        return
+    _Handler.settings = settings
+    try:
+        server = ThreadingHTTPServer((host, settings.proxy_port), _Handler)
+    except OSError:
+        log.info("inference proxy already bound on %s:%s", host, settings.proxy_port)
+        _BOUND.add(host)
+        return
+    _BOUND.add(host)
+    threading.Thread(target=server.serve_forever, name=f"baze-inference-{host}", daemon=True).start()
+    log.info("inference proxy on http://%s:%s", host, settings.proxy_port)
+
+
 def start_proxy(settings: Settings) -> ThreadingHTTPServer | None:
     if not settings.vultr_api_key:
         log.warning("inference proxy not started: VULTR_INFERENCE_API_KEY is unset")
@@ -171,6 +220,7 @@ def start_proxy(settings: Settings) -> ThreadingHTTPServer | None:
     except OSError as exc:
         log.error("inference proxy failed to bind %s:%s (%s)", host, settings.proxy_port, exc)
         return None
+    _BOUND.add(host)
     threading.Thread(target=server.serve_forever, name="baze-inference", daemon=True).start()
     log.info("inference proxy on http://%s:%s", host, settings.proxy_port)
     return server

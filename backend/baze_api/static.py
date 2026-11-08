@@ -41,7 +41,7 @@ class StaticFiles:
             self._send(resp, candidate)
             return
 
-        # Client-side routes such as /chat have no file extension.
+        # Client-side routes such as /apps have no file extension.
         if "." not in Path(relative).name:
             index = self.dist / "index.html"
             if index.is_file():

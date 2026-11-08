@@ -5,15 +5,18 @@ from __future__ import annotations
 import copy
 
 from baze_api.catalog import (
+    ACCOUNTS,
     RETIRED_APP_IDS,
     USER_COLOR,
     USER_EMAIL,
     USER_INITIALS,
     USER_INK,
     USER_NAME,
+    USER_STUDIO,
     catalog_apps,
     catalog_drafts,
 )
+from baze_api.chart import note_created
 from baze_api.db import apps, drafts, users
 from baze_api.http import new_id, now_ms
 from baze_api.settings import Settings
@@ -21,6 +24,7 @@ from baze_api.settings import Settings
 
 def ensure_seed(settings: Settings) -> None:
     if users(settings).find_one({"email": USER_EMAIL}, {"_id": 1}):
+        ensure_accounts(settings)
         reconcile_catalog(settings)
         return
     stamp = now_ms()
@@ -33,6 +37,7 @@ def ensure_seed(settings: Settings) -> None:
             "initials": USER_INITIALS,
             "color": USER_COLOR,
             "ink": USER_INK,
+            "studio": USER_STUDIO,
             "createdAt": stamp,
             "updatedAt": stamp,
         }
@@ -53,7 +58,31 @@ def ensure_seed(settings: Settings) -> None:
         document["updatedAt"] = stamp
         owned_drafts.append(document)
     drafts(settings).insert_many(owned_drafts)
+    ensure_accounts(settings)
     reconcile_catalog(settings)
+
+
+def ensure_accounts(settings: Settings) -> None:
+    """The other accounts can open apps that are shared with them."""
+    stamp = now_ms()
+    for account in ACCOUNTS:
+        current = users(settings).find_one({"email": account["email"]}, {"_id": 1, "studio": 1})
+        if current is None:
+            users(settings).insert_one(
+                {
+                    "_id": new_id(),
+                    "email": account["email"],
+                    "name": account["name"],
+                    "initials": account["initials"],
+                    "color": account["color"],
+                    "ink": account["ink"],
+                    "studio": account["studio"],
+                    "createdAt": stamp,
+                    "updatedAt": stamp,
+                }
+            )
+        elif not current.get("studio"):
+            users(settings).update_one({"_id": current["_id"]}, {"$set": {"studio": account["studio"]}})
 
 
 def reconcile_catalog(settings: Settings) -> None:
@@ -87,3 +116,4 @@ def reconcile_catalog(settings: Settings) -> None:
                 }
             },
         )
+        note_created(settings, app["_id"], f"{app['name']} was created.")

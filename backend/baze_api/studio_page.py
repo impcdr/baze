@@ -20,7 +20,7 @@ _SERVER = """from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-TYPES = {".html": "text/html; charset=utf-8", ".svg": "image/svg+xml"}
+TYPES = {".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".js": "text/javascript; charset=utf-8"}
 
 
 class Handler(BaseHTTPRequestHandler):

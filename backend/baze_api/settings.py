@@ -42,6 +42,12 @@ class Settings:
     app_cap: int
     health_timeout: float
     health_interval: float
+    ttl_hours: int
+    turn_cap: int
+    ip_starts_per_hour: int
+    ip_starts_per_day: int
+    model_calls_per_day: int
+    admin_code: str
 
 
 def load_settings() -> Settings:
@@ -77,4 +83,10 @@ def load_settings() -> Settings:
         app_cap=int(os.environ.get("BAZE_APP_CAP", "2")),
         health_timeout=float(os.environ.get("BAZE_HEALTH_TIMEOUT", "90")),
         health_interval=float(os.environ.get("BAZE_HEALTH_INTERVAL", "1")),
+        ttl_hours=max(1, int(os.environ.get("BAZE_APP_TTL_HOURS", "1"))),
+        turn_cap=max(1, int(os.environ.get("BAZE_TURN_CAP", "2"))),
+        ip_starts_per_hour=max(1, int(os.environ.get("BAZE_IP_STARTS_PER_HOUR", "4"))),
+        ip_starts_per_day=max(1, int(os.environ.get("BAZE_IP_STARTS_PER_DAY", "10"))),
+        model_calls_per_day=max(1, int(os.environ.get("BAZE_MODEL_CALLS_PER_DAY", "800"))),
+        admin_code=os.environ.get("BAZE_ADMIN_CODE", ""),
     )

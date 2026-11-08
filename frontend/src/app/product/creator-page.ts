@@ -5,15 +5,17 @@ import { NgIcon, provideIcons } from '@ng-icons/core';
 import { lucideArrowUp, lucideLoaderCircle } from '@ng-icons/lucide';
 import { toast } from '@spartan-ng/brain/sonner';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
+import { HlmDialogImports } from '@spartan-ng/helm/dialog';
 import { switchMap, takeWhile, timer } from 'rxjs';
 import { BazeApi } from '../api/baze-api';
-import type { AppSketch, AppStep, AppTurn } from '../api/models';
+import type { AppSketch, AppStep, AppTurn, BoxChoice } from '../api/models';
+import { chatTimeline, type ChatEntry } from './chat-timeline';
 import { BazeAppTile, BazeEmptyShelf } from '../baze/brand';
 import { BAZE_ICONS } from './icons';
 
 @Component({
   selector: 'bz-creator',
-  imports: [NgIcon, HlmButtonImports, BazeEmptyShelf, BazeAppTile],
+  imports: [NgIcon, HlmButtonImports, HlmDialogImports, BazeEmptyShelf, BazeAppTile],
   providers: [provideIcons({ ...BAZE_ICONS, lucideArrowUp, lucideLoaderCircle })],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './creator-page.html',
@@ -28,6 +30,11 @@ export class CreatorPage {
   protected readonly messages = signal<AppTurn[]>([]);
   protected readonly steps = signal<AppStep[]>([]);
   protected readonly sketch = signal<AppSketch>({ name: '', summary: '', icon: '', color: '' });
+  protected readonly boxes = signal<BoxChoice[]>([]);
+  protected readonly recommended = signal('');
+  protected readonly chosen = signal('');
+  protected readonly reason = signal('');
+  protected readonly picking = signal(false);
   protected readonly draft = signal('');
   protected readonly sending = signal(false);
   protected readonly making = signal(false);
@@ -47,6 +54,7 @@ export class CreatorPage {
         if (epoch !== this.epoch) return;
         this.messages.set(thread.messages);
         this.sketch.set(thread.sketch);
+        this.takeBoxes(thread);
         if (typeof prompt === 'string' && prompt.trim() && thread.messages.length === 0) {
           history.replaceState({}, '');
           this.ask(prompt.trim());
@@ -73,6 +81,10 @@ export class CreatorPage {
     const chosen = this.sketch().color;
     if (chosen) return chosen;
     return this.sketch().icon ? '#1a5ce6' : '#b7c2d6';
+  }
+
+  protected timeline(): ChatEntry[] {
+    return chatTimeline(this.messages(), this.steps());
   }
 
   protected chatting(): boolean {
@@ -107,6 +119,10 @@ export class CreatorPage {
     this.messages.set([]);
     this.steps.set([]);
     this.sketch.set({ name: '', summary: '', icon: '', color: '' });
+    this.chosen.set('');
+    this.recommended.set('');
+    this.reason.set('');
+    this.picking.set(false);
     this.draft.set('');
     this.sending.set(false);
     this.shelfOn.set(true);
@@ -118,19 +134,41 @@ export class CreatorPage {
   }
 
   protected make(): void {
-    if (!this.ready() || this.sending() || this.making()) return;
+    if (!this.ready() || this.sending() || this.making() || !this.boxes().length) return;
+    if (!this.chosen()) this.chosen.set(this.recommended() || 'web');
+    this.picking.set(true);
+  }
+
+  protected confirm(): void {
+    const profile = this.chosen();
+    if (!profile || this.sending() || this.making()) return;
+    this.picking.set(false);
     this.making.set(true);
-    this.api.makeCreator().subscribe({
+    this.api.makeCreator(profile).subscribe({
       next: (made) => {
         this.steps.set(made.steps);
         this.scroll();
         this.watch(made.id);
       },
-      error: () => {
+      error: (error: unknown) => {
         this.making.set(false);
-        toast('The app did not start.');
+        toast(refusal(error, 'The app did not start.'));
       },
     });
+  }
+
+  protected pickBox(id: string): void {
+    this.chosen.set(id);
+  }
+
+  protected dismiss(): void {
+    this.picking.set(false);
+  }
+
+  private takeBoxes(thread: { boxes?: BoxChoice[]; recommended?: string; reason?: string }): void {
+    if (thread.boxes?.length) this.boxes.set(thread.boxes);
+    if (thread.recommended) this.recommended.set(thread.recommended);
+    if (thread.reason) this.reason.set(thread.reason);
   }
 
   private ask(content: string): void {
@@ -144,14 +182,17 @@ export class CreatorPage {
         if (epoch !== this.epoch) return;
         this.messages.set(thread.messages);
         this.sketch.set(thread.sketch);
+        this.takeBoxes(thread);
+        this.picking.set(false);
+        this.chosen.set('');
         this.sending.set(false);
         this.scroll();
       },
-      error: () => {
+      error: (error: unknown) => {
         if (epoch !== this.epoch) return;
         this.messages.update((turns) => turns.filter((turn) => turn.id !== mine.id));
         this.sending.set(false);
-        toast('The model did not answer.');
+        toast(refusal(error, 'The model did not answer.'));
       },
     });
   }
@@ -187,4 +228,10 @@ export class CreatorPage {
       if (node) node.scrollTop = node.scrollHeight;
     });
   }
+}
+
+function refusal(error: unknown, fallback: string): string {
+  const body = error as { status?: number; error?: { description?: string } };
+  if (body?.status === 429 && body.error?.description) return body.error.description;
+  return fallback;
 }

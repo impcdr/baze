@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, signal, viewChild } from '@angular/core';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { appFaviconHref } from './app-favicon';
@@ -205,10 +205,71 @@ export class BazeGoLive {
       <rect class="ghost" x="84" y="30" width="52" height="52" rx="16"></rect>
       <g class="plus"><path d="M110 46 V66 M100 56 H120"></path></g>
     </svg>
-    <p class="bz-empty-shelf__title">What should we make today?</p>
+    <p class="bz-empty-shelf__title" aria-hidden="true">
+      What should we
+      <span class="bz-cycle" [class.is-set]="slot() > 0" [style.--slot]="slot()">
+        <span #sizer class="bz-cycle__sizer">{{ words[index() % words.length] }}</span>
+        <span class="bz-cycle__window">
+          <span class="bz-cycle__reel" [class.is-instant]="instant()" [style.--i]="index()">
+            @for (word of reel; track $index) {
+              <span class="bz-cycle__word">{{ word }}</span>
+            }
+          </span>
+        </span>
+      </span>
+      today?
+    </p>
+    <span class="sr-only">What should we build, test, verify, record, or ship today?</span>
   `,
 })
-export class BazeEmptyShelf {}
+export class BazeEmptyShelf {
+  private readonly sizer = viewChild<ElementRef<HTMLElement>>('sizer');
+  protected readonly words = ['build', 'test', 'verify', 'record', 'ship'];
+  protected readonly reel = [...this.words, this.words[0]];
+  protected readonly index = signal(0);
+  protected readonly instant = signal(false);
+  /** Width of the current word, so the sentence stays tight around it. */
+  protected readonly slot = signal(0);
+
+  constructor() {
+    const destroy = inject(DestroyRef);
+    let observer: ResizeObserver | undefined;
+    afterNextRender(() => {
+      this.fit();
+      const shelf = this.sizer()?.nativeElement.closest('.bz-empty-shelf');
+      if (!shelf) return;
+      observer = new ResizeObserver(() => this.fit());
+      observer.observe(shelf);
+    });
+    destroy.onDestroy(() => observer?.disconnect());
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let snap = 0;
+    const step = () => {
+      const next = this.index() + 1;
+      this.instant.set(false);
+      this.index.set(next);
+      requestAnimationFrame(() => this.fit());
+      if (next === this.words.length) {
+        snap = window.setTimeout(() => {
+          this.instant.set(true);
+          this.index.set(0);
+          requestAnimationFrame(() => requestAnimationFrame(() => this.instant.set(false)));
+        }, 560);
+      }
+    };
+    const id = window.setInterval(step, 2800);
+    destroy.onDestroy(() => {
+      window.clearInterval(id);
+      window.clearTimeout(snap);
+    });
+  }
+
+  private fit(): void {
+    const node = this.sizer()?.nativeElement;
+    if (!node) return;
+    this.slot.set(Math.ceil(node.getBoundingClientRect().width));
+  }
+}
 
 export const BazeBrandImports = [
   BazeLogo,

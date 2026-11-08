@@ -6,10 +6,22 @@ import secrets
 
 import falcon
 
+from baze_api.identity import set_current_email
 from baze_api.settings import Settings
 
 PUBLIC_PATHS = {"/api/health", "/api"}
 PUBLIC_PREFIXES = ("/api/account", "/api/home", "/api/presets", "/api/apps", "/api/shared", "/api/drafts", "/api/creator")
+
+
+class CurrentUserMiddleware:
+    """Read the account cookie. The default account is used when it is absent."""
+
+    def process_request(self, req: falcon.Request, resp: falcon.Response) -> None:
+        values = req.get_cookie_values("baze_user") or []
+        set_current_email(values[0] if values else None)
+
+    def process_response(self, req: falcon.Request, resp: falcon.Response, resource, req_succeeded: bool) -> None:
+        set_current_email(None)
 
 
 class CorsMiddleware:

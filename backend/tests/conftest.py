@@ -8,6 +8,7 @@ import pytest
 
 from baze_api.app import create_app
 from baze_api.db import get_db
+from baze_api.limits import reset
 from baze_api.settings import load_settings
 
 
@@ -19,8 +20,9 @@ def settings():
 @pytest.fixture(autouse=True)
 def clean_db(settings):
     database = get_db(settings)
-    for name in ("conversations", "users", "apps", "drafts", "messages"):
+    for name in ("conversations", "users", "apps", "drafts", "messages", "limits"):
         database[name].delete_many({})
+    reset()
 
 
 @pytest.fixture()

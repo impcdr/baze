@@ -1,8 +1,9 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
 import { switchMap } from 'rxjs';
+import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmEmptyImports } from '@spartan-ng/helm/empty';
 import { BazeApi } from '../api/baze-api';
@@ -12,7 +13,7 @@ import { BAZE_ICONS } from './icons';
 
 @Component({
   selector: 'bz-shelf',
-  imports: [NgIcon, HlmButtonImports, HlmEmptyImports, AppCard],
+  imports: [NgIcon, RouterLink, HlmBadgeImports, HlmButtonImports, HlmEmptyImports, AppCard],
   providers: [provideIcons(BAZE_ICONS)],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './shelf-page.html',

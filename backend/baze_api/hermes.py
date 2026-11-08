@@ -8,11 +8,21 @@ import urllib.request
 
 
 class HermesError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, stuck: bool = False) -> None:
+        super().__init__(message)
+        self.stuck = stuck
 
 
 class HermesClient:
     def complete(self, *, base_url: str, api_key: str, content: str, session_id: str | None) -> tuple[str, str]:
+        try:
+            return self._complete(base_url=base_url, api_key=api_key, content=content, session_id=session_id)
+        except HermesError as exc:
+            if not session_id or not exc.stuck:
+                raise
+            return self._complete(base_url=base_url, api_key=api_key, content=content, session_id=None)
+
+    def _complete(self, *, base_url: str, api_key: str, content: str, session_id: str | None) -> tuple[str, str]:
         payload = {"model": "hermes-agent", "messages": [{"role": "user", "content": content}]}
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -27,11 +37,14 @@ class HermesClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=300) as response:
+            # Stay until the gateway finishes. A short cutoff used to end the chat
+            # while the container was still editing.
+            with urllib.request.urlopen(request, timeout=None) as response:
                 raw = response.read()
                 session = response.headers.get("X-Hermes-Session-Id") or session_id or ""
         except urllib.error.HTTPError as exc:
-            raise HermesError(exc.read().decode("utf-8", "replace")[:300]) from exc
+            detail = exc.read().decode("utf-8", "replace")[:300]
+            raise HermesError(detail, stuck=exc.code == 409) from exc
         except OSError as exc:
             raise HermesError(str(exc)) from exc
         try:

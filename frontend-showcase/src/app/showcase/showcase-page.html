@@ -10,7 +10,6 @@
     </div>
     <div class="ms-auto flex items-center gap-2">
       <a href="#spartan" hlmBtn variant="ghost" size="sm">Spartan</a>
-      <a href="http://127.0.0.1:4200/chat" hlmBtn variant="ghost" size="sm">Chat</a>
       <button hlmBtn type="button" variant="outline" size="icon" (click)="theme.toggle()" [attr.aria-label]="theme.mode() === 'dark' ? 'Use light theme' : 'Use dark theme'">
         <ng-icon [name]="theme.mode() === 'dark' ? 'lucideSun' : 'lucideMoon'" />
       </button>

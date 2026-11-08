@@ -92,6 +92,45 @@ def test_new_prompt_creates_a_draft_and_invoice_reopens_studio(client):
     assert missing.status_code == 404
 
 
+def test_max_can_open_a_shared_app_but_cannot_change_it(client):
+    http = testing.TestClient(client)
+    account = http.simulate_get("/api/account")
+    assert account.json["studio"] == "Lindner Studio"
+    assert [person["name"] for person in account.json["accounts"]] == [
+        "Vultr Fanboi",
+        "Max Mustermann",
+        "Erika Mustermann",
+        "Otto Normalverbraucher",
+    ]
+    granted = http.simulate_post(
+        f"/api/apps/{STUDIO_ID}/share",
+        json={"email": "max.mustermann@example.com", "shared": True},
+    )
+    assert granted.status_code == 200
+    max_row = next(row for row in granted.json["shares"] if row["email"] == "max.mustermann@example.com")
+    assert max_row["shared"] is True
+    owner = next(row for row in granted.json["shares"] if row["owner"])
+    assert owner["name"] == "Vultr Fanboi"
+    switched = http.simulate_post("/api/account", json={"email": "erika.mustermann@example.com"})
+    assert switched.status_code == 200
+    assert switched.json["name"] == "Erika Mustermann"
+    switched = http.simulate_post("/api/account", json={"email": "max.mustermann@example.com"})
+    assert switched.json["name"] == "Max Mustermann"
+    cookie = {"Cookie": "baze_user=max.mustermann@example.com"}
+    shelf = http.simulate_get("/api/apps", headers=cookie)
+    assert shelf.json["apps"] == []
+    assert [app["name"] for app in shelf.json["shared"]] == ["Studio Invoices"]
+    assert shelf.json["shared"][0]["sharedBy"] == "Vultr Fanboi"
+    assert shelf.json["shared"][0]["deletable"] is False
+    assert [person["initials"] for person in shelf.json["shared"][0]["people"]] == ["VF", "MM"]
+    manage = http.simulate_get(f"/api/apps/{STUDIO_ID}/manage", headers=cookie)
+    assert manage.status_code == 200
+    assert manage.json["canPrompt"] is False
+    assert any(row["email"] == "max.mustermann@example.com" and row["shared"] for row in manage.json["shares"])
+    refused = http.simulate_post(f"/api/apps/{STUDIO_ID}/prompt", json={"content": "Change the colors"}, headers=cookie)
+    assert refused.status_code == 403
+
+
 def test_conversations_still_require_a_bearer_token(client):
     result = testing.TestClient(client).simulate_get("/api/conversations")
     assert result.status_code == 401

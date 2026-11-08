@@ -10,6 +10,10 @@ export class BazeApi {
     return this.http.get<Account>('/api/account');
   }
 
+  useAccount(email: string) {
+    return this.http.post<Account>('/api/account', { email });
+  }
+
   home() {
     return this.http.get<HomePayload>('/api/home');
   }
@@ -35,16 +39,16 @@ export class BazeApi {
     return this.http.post<CreatorThread>('/api/creator/reset', {});
   }
 
-  makeCreator() {
-    return this.http.post<{ id: string; steps: AppStep[] }>('/api/creator/make', {});
+  makeCreator(profile?: string) {
+    return this.http.post<{ id: string; steps: AppStep[] }>('/api/creator/make', profile ? { profile } : {});
   }
 
   build(id: string) {
     return this.http.post<{ id: string }>(`/api/apps/${id}/build`, {});
   }
 
-  deleteApp(id: string) {
-    return this.http.delete(`/api/apps/${id}`, { responseType: 'text' });
+  deleteApp(id: string, code: string) {
+    return this.http.delete(`/api/apps/${id}`, { body: { code }, responseType: 'text' });
   }
 
   shared() {
@@ -87,7 +91,29 @@ export class BazeApi {
     return this.http.get<AppManage>(`/api/apps/${id}/manage`);
   }
 
-  prompt(id: string, content: string) {
-    return this.http.post<{ reply: string }>(`/api/apps/${id}/prompt`, { content });
+  share(id: string, email: string, shared: boolean) {
+    return this.http.post<{ shares: AppManage['shares'] }>(`/api/apps/${id}/share`, { email, shared });
+  }
+
+  persist(id: string, code: string) {
+    return this.http.post<{ demo: boolean; expiresAt: number | null }>(`/api/apps/${id}/persist`, { code });
+  }
+
+  prompt(id: string, content: string, attachments: string[] = [], to?: 'supervisor') {
+    return this.http.post<{ reply: string }>(`/api/apps/${id}/prompt`, { content, attachments, ...(to ? { to } : {}) });
+  }
+
+  approve(id: string, hosts: string[]) {
+    return this.http.post<{ reply: string }>(`/api/apps/${id}/decisions`, { hosts });
+  }
+
+  allowBox(id: string, allow: boolean) {
+    return this.http.post<{ reply: string }>(`/api/apps/${id}/decisions`, { allow });
+  }
+
+  upload(id: string, files: File[]) {
+    const body = new FormData();
+    for (const file of files) body.append('file', file, file.name);
+    return this.http.post<{ files: { name: string; path: string }[] }>(`/api/apps/${id}/files`, body);
   }
 }

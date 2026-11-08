@@ -1,5 +1,5 @@
 @if (app(); as page) {
-  <div class="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col">
+  <div class="flex min-h-0 w-full flex-1 flex-col overflow-y-auto lg:overflow-hidden">
     <a routerLink="/apps" class="text-muted-foreground inline-flex items-center gap-1 py-3 text-sm font-medium">
       <ng-icon name="lucideArrowLeft" />
       My apps
@@ -8,7 +8,7 @@
     <header class="flex items-start gap-3 pb-4">
       <bz-app-tile [color]="page.color" [icon]="page.icon" [size]="48" [label]="page.name" />
       <div class="min-w-0">
-        @if (page.path) {
+        @if (page.path && !page.check) {
           <a
             class="font-display block truncate text-2xl leading-tight no-underline decoration-1 underline-offset-4 hover:underline"
             [href]="page.path"
@@ -19,26 +19,48 @@
           <h1 class="font-display truncate text-2xl leading-tight">{{ page.name }}</h1>
         }
         <p class="bz-copy text-muted-foreground mt-1">{{ page.summary }}</p>
+        @if (page.check) {
+          <p class="bz-copy text-muted-foreground mt-1">This is a check, not an app.</p>
+        }
       </div>
-      <hlm-switch
-        class="ms-auto self-center"
-        [checked]="running()"
-        [disabled]="!page.runnable || powering() || page.status === 'building'"
-        [aria-label]="running() ? 'Stop ' + page.name : 'Start ' + page.name"
-        (checkedChange)="toggle($event)"
-      />
+      @if (page.canPrompt) {
+        <hlm-switch
+          class="ms-auto self-center"
+          [checked]="running()"
+          [disabled]="!page.runnable || powering() || page.status === 'building' || page.status === 'attention'"
+          [aria-label]="running() ? 'Stop ' + page.name : 'Start ' + page.name"
+          (checkedChange)="toggle($event)"
+        />
+      }
     </header>
 
-    <section class="bg-card mt-2 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl" aria-label="Adjust this app">
-      <dl class="grid gap-3 border-b px-4 py-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-start">
+    <div class="mt-2 grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(17rem,0.8fr)]">
+    <section class="bg-card flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-xl lg:min-h-0" aria-label="Adjust this app">
+      <dl class="grid gap-3 border-b px-4 py-3 sm:items-start {{ page.box ? 'sm:grid-cols-4' : 'sm:grid-cols-3' }}">
         <div>
           <dt class="text-muted-foreground text-xs font-medium">Status</dt>
-          <dd class="mt-1">
-            <span hlmBadge [variant]="page.status === 'live' ? 'success' : page.status === 'error' ? 'warning' : 'outline'">
-              {{ page.status === 'live' ? 'Live' : page.status === 'building' ? 'Being made' : page.status === 'error' ? 'Didn’t start' : 'Off' }}
+          <dd class="mt-1 flex flex-wrap items-center gap-2">
+            <span hlmBadge [variant]="page.status === 'live' ? 'success' : needsDecision(page) || page.status === 'error' ? 'warning' : 'outline'">
+              @if (statusText(page) === 'Being made') {
+                <ng-icon name="lucideLoaderCircle" class="animate-spin" aria-hidden="true" />
+              }
+              {{ statusText(page) }}
             </span>
+            @if (timeLeft(page); as left) {
+              <span hlmBadge variant="outline" class="tabular-nums" hlmTooltip="This is a demo. It goes away when the time runs out.">{{ left }} left</span>
+            } @else if (page.demo) {
+              <span hlmBadge variant="outline" hlmTooltip="This is a demo. It stays on the shelf.">Demo</span>
+            }
           </dd>
         </div>
+        @if (page.box) {
+          <div>
+            <dt class="text-muted-foreground text-xs font-medium">Type</dt>
+            <dd class="mt-1 text-sm">
+              <span class="cursor-help underline decoration-dotted underline-offset-4" [hlmTooltip]="page.box.sentence">{{ page.box.name }}</span>
+            </dd>
+          </div>
+        }
         <div>
           <dt class="text-muted-foreground text-xs font-medium">Created</dt>
           <dd class="mt-1 text-sm">{{ when(page.createdAt, 'Unknown') }}</dd>
@@ -47,8 +69,166 @@
           <dt class="text-muted-foreground text-xs font-medium">Last run</dt>
           <dd class="mt-1 text-sm">{{ when(page.lastRunAt) }}</dd>
         </div>
+      </dl>
+
+      <div #thread class="min-h-0 flex-1 overflow-y-auto px-4 py-4" role="log" aria-label="Adjustments">
+        <hlm-dialog #madeDialog>
+          <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+            <div hlmDialogHeader>
+              <h3 hlmDialogTitle>Decision</h3>
+              <p hlmDialogDescription>What this decision changed.</p>
+            </div>
+            <p class="bz-copy whitespace-pre-wrap break-words">{{ made() || 'This decision was not recorded.' }}</p>
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+            </div>
+          </hlm-dialog-content>
+        </hlm-dialog>
+        @if (page.messages.length === 0 && page.steps.length === 0 && !held(page)) {
+          <p class="bz-copy text-muted-foreground">Tell this app what to change.</p>
+        }
+        <ol class="flex flex-col gap-3">
+          @for (message of page.messages; track message.id) {
+            @if (message.role === 'user' && message.content.trim() === 'Make decision') {
+            } @else if (message.role === 'progress') {
+              <li class="flex items-center gap-2">
+                @if (message.state === 'done') {
+                  <ng-icon name="lucideCheck" class="text-success size-3.5" />
+                } @else if (message.state === 'active') {
+                  <ng-icon name="lucideLoaderCircle" class="size-3.5 animate-spin" />
+                } @else if (message.state === 'stopped') {
+                  <ng-icon name="lucideMinus" class="text-muted-foreground size-3.5" />
+                } @else {
+                  <span class="border-muted-foreground/40 size-3.5 shrink-0 rounded-full border"></span>
+                }
+                <span class="bz-copy">{{ message.content }}</span>
+              </li>
+            } @else if (message.role === 'supervisor') {
+              <li class="flex max-w-[85%] flex-col items-start">
+                <div class="border-warning bg-warning/15 text-warning-foreground w-full rounded-xl border px-3.5 py-2">
+                  <p class="inline-flex items-center gap-1.5">
+                    <ng-icon name="lucideShieldAlert" class="size-3.5" />
+                    <span class="bz-copy font-medium">supervisor</span>
+                  </p>
+                  <p class="bz-copy mt-1 whitespace-pre-wrap">{{ message.content }}</p>
+                  @if (deciding(page, message) && page.boxPrompt) {
+                    <div class="mt-2 flex justify-end gap-2">
+                      <button type="button" class="bz-copy rounded-md px-2.5 py-1 font-medium disabled:opacity-40" [disabled]="sending()" (click)="answerBox(false)">Not now</button>
+                      <button type="button" class="bz-copy bg-warning text-warning-foreground hover:bg-warning/80 rounded-md px-2.5 py-1 font-medium disabled:opacity-40" [disabled]="sending()" (click)="answerBox(true)">Allow</button>
+                    </div>
+                  } @else if (deciding(page, message)) {
+                    <div class="mt-2 flex justify-end">
+                      <button type="button" class="bz-copy bg-warning text-warning-foreground hover:bg-warning/80 rounded-md px-2.5 py-1 font-medium disabled:opacity-40" [disabled]="sending()" [hlmDialogTriggerFor]="decisionDialog" (click)="prepareDecision()">Make decision</button>
+                    </div>
+                    <hlm-dialog #decisionDialog>
+                      <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+                        <div hlmDialogHeader>
+                          <h3 hlmDialogTitle>Make decision</h3>
+                          <p hlmDialogDescription>The supervisor checked the sites it considers reasonable. Everything unchecked stays closed.</p>
+                        </div>
+                        <ul class="max-h-64 overflow-y-auto">
+                          @for (site of page.sites; track site.host) {
+                            <li>
+                              <label class="bz-copy flex items-center gap-2 py-1">
+                                <input type="checkbox" [checked]="isPicked(site.host)" [disabled]="sending()" (change)="toggleSite(site.host, $event)" />
+                                <span class="min-w-0 break-all">{{ site.host }}</span>
+                              </label>
+                            </li>
+                          }
+                        </ul>
+                        <div hlmDialogFooter>
+                          <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+                          <button hlmBtn type="button" hlmDialogClose [disabled]="sending()" (click)="approve()">Make decision</button>
+                        </div>
+                      </hlm-dialog-content>
+                    </hlm-dialog>
+                  } @else if (message.decided) {
+                    <div class="mt-2 flex justify-end">
+                      <button type="button" class="bz-copy italic" [hlmDialogTriggerFor]="madeDialog" (click)="made.set(message.decision || '')">Decision was made</button>
+                    </div>
+                  }
+                </div>
+              </li>
+            } @else {
+              <li class="flex" [class.justify-end]="message.role === 'user'">
+                <p class="bz-copy bg-background max-w-[85%] rounded-xl px-3.5 py-2 whitespace-pre-wrap">{{ message.content }}</p>
+              </li>
+            }
+          }
+          @if (page.activity) {
+            <li><span class="bz-copy shimmer text-muted-foreground">{{ page.activity }}</span></li>
+          }
+        </ol>
+      </div>
+
+      @if (page.canPrompt) {
+      <form class="px-4 pt-1 pb-4" (submit)="$event.preventDefault(); send()">
+        @if (files().length > 0) {
+          <ul class="mb-2 flex flex-wrap gap-2">
+            @for (file of files(); track file.name + file.size) {
+              <li class="bg-background flex items-center gap-1 rounded-full py-1 ps-3 pe-1">
+                <span class="bz-copy max-w-40 truncate">{{ file.name }}</span>
+                <button hlmBtn type="button" variant="ghost" size="icon" class="size-7" [attr.aria-label]="'Remove ' + file.name" (click)="dropFile(file)">
+                  <ng-icon name="lucideX" />
+                </button>
+              </li>
+            }
+          </ul>
+        }
+        <div class="flex items-end gap-1">
+          <label class="sr-only" for="manage-files">Add files</label>
+          <input #picker id="manage-files" class="sr-only" type="file" multiple [disabled]="!open(page) || held(page)" (change)="onFiles($event)" />
+          <button type="button" class="text-muted-foreground hover:text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Add files" [disabled]="!open(page) || held(page) || files().length >= 4" (click)="picker.click()">
+            <ng-icon name="lucidePaperclip" class="size-4" />
+          </button>
+          @if (needsDecision(page)) {
+            <button type="button" class="text-muted-foreground hover:text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send to supervisor" [disabled]="!open(page) || held(page) || !draft().trim()" (click)="sendToSupervisor()">
+              <ng-icon name="lucideShieldAlert" class="size-4" />
+            </button>
+          }
+          <label class="sr-only" for="manage-composer">Change to ask for</label>
+          <div class="bg-background flex min-h-10 min-w-0 flex-1 items-end rounded-xl">
+            <textarea
+              id="manage-composer"
+              rows="1"
+              class="placeholder:text-muted-foreground max-h-40 min-h-10 min-w-0 flex-1 resize-none border-0 bg-transparent py-2.5 ps-3.5 pe-1 text-[length:var(--bz-text-meta)] leading-5 outline-none"
+              placeholder="Tell me what to change…"
+              [value]="draft()"
+              [disabled]="!open(page) || held(page)"
+              (input)="onDraft($event)"
+              (keydown)="onKeydown($event)"
+            ></textarea>
+            <button type="submit" class="text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send" [disabled]="!open(page) || held(page) || (!draft().trim() && files().length === 0)">
+              <ng-icon name="lucideArrowUp" class="size-4" />
+            </button>
+          </div>
+        </div>
+        @if (page.status === 'error' && page.statusError) {
+          <p class="bz-copy text-muted-foreground mt-2">{{ page.statusError }}</p>
+        }
+      </form>
+      } @else if (page.check) {
+        <p class="bz-copy text-muted-foreground px-4 pt-1 pb-4">This check is finished.</p>
+      } @else {
+        <p class="bz-copy text-muted-foreground px-4 pt-1 pb-4">You can open this app. You can't ask for changes.</p>
+      }
+    </section>
+
+    <aside class="flex min-h-0 min-w-0 flex-col gap-4 lg:h-full lg:overflow-hidden" aria-label="Settings and record">
+      <section class="bg-card shrink-0 rounded-xl px-4 py-3" aria-label="App Settings">
+        <h2 class="font-display text-lg">App Settings</h2>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="sitesDialog">Allowed Sites</button>
+          <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="shareDialog">Share</button>
+          @if (page.canPrompt && !page.demo) {
+            <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="persistDialog">Persist</button>
+          }
+        </div>
+        @if (page.sharedBy) {
+          <p class="bz-copy text-muted-foreground mt-3">Shared by {{ page.sharedBy }}.</p>
+        }
         @if (page.deletable) {
-          <div class="flex sm:justify-end">
+          <div class="mt-4 border-t pt-3">
             <button hlmBtn type="button" variant="destructive" size="sm" [hlmDialogTriggerFor]="deleteDialog">
               <ng-icon name="lucideTrash2" />
               Delete app
@@ -59,67 +239,139 @@
                   <h3 hlmDialogTitle>Delete {{ page.name }}?</h3>
                   <p hlmDialogDescription>The container and the app go away.</p>
                 </div>
+                <label class="bz-copy" for="delete-code">Admin code</label>
+                <input
+                  hlmInput
+                  id="delete-code"
+                  type="password"
+                  name="code"
+                  autocomplete="off"
+                  [value]="deleteCode()"
+                  (input)="onDeleteCode($event)"
+                />
                 <div hlmDialogFooter>
                   <button hlmBtn type="button" variant="outline" hlmDialogClose>Cancel</button>
-                  <button hlmBtn type="button" variant="destructive" (click)="remove()">Delete app</button>
+                  <button hlmBtn type="button" variant="destructive" (click)="remove(ctx)" [disabled]="powering() || !deleteCode().trim()">Delete app</button>
                 </div>
               </hlm-dialog-content>
             </hlm-dialog>
           </div>
         }
-      </dl>
-
-      <div #thread class="min-h-0 flex-1 overflow-y-auto px-4 py-4" role="log" aria-label="Adjustments">
-        @if (page.messages.length === 0 && page.steps.length === 0 && !sending()) {
-          <p class="bz-copy text-muted-foreground">Tell this app what to change.</p>
-        }
-        <ol class="flex flex-col gap-3">
-          @for (message of page.messages; track message.id) {
-            <li class="flex" [class.justify-end]="message.role === 'user'">
-              <p class="bz-copy bg-background max-w-[85%] rounded-xl px-3.5 py-2 whitespace-pre-wrap">{{ message.content }}</p>
-            </li>
-          }
-          @for (step of page.steps; track step.id) {
-            <li class="flex items-center gap-2">
-              @if (step.state === 'done') {
-                <ng-icon name="lucideCheck" class="text-success size-3.5" />
-              } @else {
-                <ng-icon name="lucideLoaderCircle" class="size-3.5 animate-spin" />
+        <hlm-dialog #persistDialog>
+          <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+            <div hlmDialogHeader>
+              <h3 hlmDialogTitle>Persist</h3>
+              <p hlmDialogDescription>Goes away {{ when(page.expiresAt, 'within the hour') }}.</p>
+            </div>
+            <label class="bz-copy" for="persist-code">Admin code</label>
+            <input
+              hlmInput
+              id="persist-code"
+              type="password"
+              name="code"
+              autocomplete="off"
+              [value]="persistCode()"
+              (input)="onPersistCode($event)"
+            />
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Cancel</button>
+              <button hlmBtn type="button" (click)="persist(ctx)" [disabled]="persisting() || !persistCode().trim()">Persist</button>
+            </div>
+          </hlm-dialog-content>
+        </hlm-dialog>
+        <hlm-dialog #sitesDialog>
+          <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+            <div hlmDialogHeader>
+              <h3 hlmDialogTitle>Allowed Sites</h3>
+              <p hlmDialogDescription>Allowed sites can be reached. Everything else stays closed.</p>
+            </div>
+            @if (page.allowed.length === 0 && page.closed.length === 0) {
+              <p class="bz-copy text-muted-foreground">No sites are allowed yet.</p>
+            } @else {
+              <ul class="max-h-[min(24rem,60vh)] overflow-y-auto">
+                @for (host of page.allowed; track host) {
+                  <li class="bz-copy break-all py-1">{{ host }}</li>
+                }
+                @for (host of page.closed; track host) {
+                  <li class="bz-copy text-muted-foreground break-all py-1">{{ host }} — closed</li>
+                }
+              </ul>
+            }
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+            </div>
+          </hlm-dialog-content>
+        </hlm-dialog>
+        <hlm-dialog #shareDialog>
+          <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+            <div hlmDialogHeader>
+              <h3 hlmDialogTitle>Share</h3>
+              <p hlmDialogDescription>People on this app can open it. They can't ask for changes.</p>
+            </div>
+            <ul class="max-h-[min(24rem,60vh)] overflow-y-auto">
+              @for (person of page.shares; track person.email) {
+                <li class="flex items-center justify-between gap-3 py-2">
+                  <span class="flex min-w-0 items-center gap-2">
+                    <span class="grid size-6 shrink-0 place-items-center rounded-full font-display text-[10px] font-extrabold" [style.background]="person.color" [style.color]="person.ink">{{ person.initials }}</span>
+                    <span class="min-w-0">
+                      <span class="block truncate text-sm font-medium">{{ person.name }}</span>
+                      <span class="bz-copy text-muted-foreground block truncate">{{ person.owner ? 'Owner' : person.email }}</span>
+                    </span>
+                  </span>
+                  @if (!person.owner) {
+                    <hlm-checkbox
+                      [checked]="person.shared"
+                      [disabled]="!page.canPrompt || sharing()"
+                      [aria-label]="person.name"
+                      (checkedChange)="share(person.email, $event)"
+                    />
+                  }
+                </li>
               }
-              <span class="bz-copy">{{ step.label }}</span>
-            </li>
+            </ul>
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+            </div>
+          </hlm-dialog-content>
+        </hlm-dialog>
+      </section>
+      <section class="bg-card flex max-h-80 min-h-0 flex-col overflow-hidden rounded-xl lg:max-h-none lg:min-h-0 lg:flex-1" aria-label="Record">
+        <h2 class="font-display shrink-0 border-b px-4 py-3 text-lg">Record</h2>
+        <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          @if (page.record.length === 0) {
+            <p class="bz-copy text-muted-foreground">Nothing recorded yet.</p>
+          } @else {
+            <hlm-dialog #recordDialog>
+              <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+                @if (chosen(); as entry) {
+                  <div hlmDialogHeader>
+                    <h3 hlmDialogTitle>{{ entryLabel(entry) }}</h3>
+                    <p hlmDialogDescription>{{ when(entry.at) }}</p>
+                  </div>
+                  <p class="bz-copy whitespace-pre-wrap break-words">{{ entry.detail || entry.summary }}</p>
+                }
+                <div hlmDialogFooter>
+                  <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+                </div>
+              </hlm-dialog-content>
+            </hlm-dialog>
+            <ol class="flex flex-col gap-1">
+              @for (entry of page.record; track entry.id) {
+                <li>
+                  <button type="button" class="hover:bg-muted w-full rounded-lg px-2 py-2 text-start" [hlmDialogTriggerFor]="recordDialog" (click)="chosen.set(entry)">
+                    <span class="flex items-center gap-2">
+                      <span hlmBadge [variant]="entryTone(entry)">{{ entryLabel(entry) }}</span>
+                      <time class="text-muted-foreground text-xs">{{ when(entry.at) }}</time>
+                    </span>
+                    <span class="bz-copy mt-1 block">{{ shortRecord(entry) }}</span>
+                  </button>
+                </li>
+              }
+            </ol>
           }
-          @if (sending()) {
-            <li><span class="bz-copy shimmer text-muted-foreground">Thinking…</span></li>
-          }
-        </ol>
-      </div>
-
-      <form class="px-4 pt-1 pb-4" (submit)="$event.preventDefault(); send()">
-        <div class="flex items-end gap-2">
-          <label class="sr-only" for="manage-composer">Change to ask for</label>
-          <textarea
-            id="manage-composer"
-            rows="1"
-            class="bz-copy placeholder:text-muted-foreground bg-background max-h-40 min-h-10 flex-1 resize-none rounded-xl px-3.5 py-2 outline-none"
-            placeholder="Tell me what to change…"
-            [value]="draft()"
-            [disabled]="page.status !== 'live' || sending()"
-            (input)="onDraft($event)"
-            (keydown)="onKeydown($event)"
-          ></textarea>
-          <button hlmBtn type="submit" size="icon" aria-label="Send" [disabled]="page.status !== 'live' || sending() || !draft().trim()">
-            <ng-icon name="lucideArrowUp" />
-          </button>
         </div>
-        @if (page.status === 'building') {
-          <p class="bz-copy text-muted-foreground mt-2">The app is being made.</p>
-        } @else if (page.status === 'error' && page.statusError) {
-          <p class="bz-copy text-muted-foreground mt-2">{{ page.statusError }}</p>
-        } @else if (page.status !== 'live') {
-          <p class="bz-copy text-muted-foreground mt-2">Start the app before asking for a change.</p>
-        }
-      </form>
-    </section>
+      </section>
+    </aside>
+    </div>
   </div>
 }
