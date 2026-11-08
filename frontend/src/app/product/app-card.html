@@ -65,7 +65,7 @@
     <button
       hlmDropdownMenuItem
       type="button"
-      [disabled]="!!shown().sharedBy || !shown().runnable || shown().status === 'live' || pending()"
+      [disabled]="shown().sealed || !!shown().sharedBy || !shown().runnable || shown().status === 'live' || pending()"
       (click)="start()"
     >
       {{ pending() === 'start' ? 'Starting…' : 'Start app' }}
@@ -73,7 +73,7 @@
     <button
       hlmDropdownMenuItem
       type="button"
-      [disabled]="!!shown().sharedBy || !shown().runnable || shown().status !== 'live' || pending()"
+      [disabled]="shown().sealed || !!shown().sharedBy || !shown().runnable || shown().status !== 'live' || pending()"
       (click)="stop()"
     >
       {{ pending() === 'stop' ? 'Stopping…' : 'Stop app' }}

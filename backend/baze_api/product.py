@@ -12,7 +12,8 @@ import falcon
 from pymongo.errors import PyMongoError
 
 from baze_api.activity import mark_working, working_turn
-from baze_api.boxes import BOXES, box_copy, box_prompt, known_profile, recommend_profile, settle_box_prompt, suggestion_reason
+from baze_api.boxes import BOXES, box_copy, box_prompt, given_files, known_profile, recommend_profile, settle_box_prompt, suggestion_reason
+from baze_api.secrets import SecretError, leave_secret, public_secrets, take_secret
 
 log = logging.getLogger("baze.product")
 from baze_api.catalog import (
@@ -28,7 +29,7 @@ from baze_api.catalog import (
     live_path,
     preset,
 )
-from baze_api.identity import current_email
+from baze_api.identity import address_allows, current_email, current_ip
 from baze_api.chart import ask_chart, public_chart
 from baze_api.db import apps, drafts, messages, users
 from baze_api.hermes import HermesClient, HermesError
@@ -48,6 +49,7 @@ from baze_api.provisioner import (
     delete_shelf_app,
     busy_progress,
     record_progress,
+    refresh_published,
     _activate_plan,
     _hold,
     _mark_plan_done,
@@ -178,17 +180,23 @@ def public_app(document: dict, settings: Settings | None = None, *, shared_by: s
         payload[field] = document.get(field)
     payload["runnable"] = bool((document.get("runtime") or {}).get("containerName"))
     payload["sharedBy"] = shared_by if shared_by is not None else document.get("sharedBy")
-    payload["deletable"] = shared_by is None and not document.get("sharedBy")
     payload["statusError"] = document.get("statusError")
     payload["people"] = _people(settings, document) if settings is not None else []
     payload["demo"] = bool(document.get("demo"))
+    payload["sealed"] = bool(document.get("sealed"))
+    payload["deletable"] = shared_by is None and not document.get("sharedBy") and not document.get("sealed")
     payload["expiresAt"] = document.get("expiresAt")
     return payload
 
 
+def _hold_sealed(document: dict) -> None:
+    if document.get("sealed"):
+        raise falcon.HTTPForbidden(description="This demo stays as it is.")
+
+
 def _load_app(settings: Settings, app_id: str, user: dict, *, owner_only: bool) -> dict:
     document = apps(settings).find_one({"_id": _parse_app_id(app_id), "kind": {"$ne": "runtime"}})
-    if document is None:
+    if document is None or not address_allows(document):
         raise falcon.HTTPNotFound(description="App not found")
     if document.get("ownerId") == user["_id"]:
         return document
@@ -262,12 +270,20 @@ def _shelf(settings: Settings, status: str | None, *, shared: bool) -> dict:
     query = _catalog(user["_id"], shared=shared)
     if status and status != "all":
         query["status"] = status
-    documents = [document for document in apps(settings).find(query).sort("sort", 1) if not _closed_check(document)]
-    own = [document for document in apps(settings).find(_catalog(user["_id"], shared=False)) if not _closed_check(document)]
+    documents = [
+        document
+        for document in apps(settings).find(query).sort("sort", 1)
+        if address_allows(document) and not _is_check(document)
+    ]
+    own = [
+        document
+        for document in apps(settings).find(_catalog(user["_id"], shared=False))
+        if address_allows(document) and not _is_check(document)
+    ]
     check_docs = [
         document
         for document in apps(settings).find(_catalog(user["_id"], shared=False)).sort("sort", 1)
-        if _closed_check(document)
+        if address_allows(document) and _is_check(document)
     ]
     shared_query: dict = {
         "sharedWith": user["_id"],
@@ -276,7 +292,13 @@ def _shelf(settings: Settings, status: str | None, *, shared: bool) -> dict:
     }
     if status and status != "all":
         shared_query["status"] = status
-    shared_docs = list(apps(settings).find(shared_query).sort("sort", 1))
+    shared_docs = [
+        document
+        for document in apps(settings).find(shared_query).sort("sort", 1)
+        if address_allows(document) and not document.get("sealed") and not _is_check(document)
+    ]
+    if not shared:
+        _include_sealed(settings, documents, own, check_docs, status)
     owner_names = {
         person["_id"]: person.get("name") or ""
         for person in users(settings).find(
@@ -310,17 +332,47 @@ def _shelf(settings: Settings, status: str | None, *, shared: bool) -> dict:
     return page
 
 
+def _include_sealed(settings: Settings, documents: list[dict], own: list[dict], check_docs: list[dict], status: str | None) -> None:
+    """Demo apps that are sealed show on every shelf. They stay out of Shared."""
+    seen = {document["_id"] for document in documents}
+    seen_checks = {document["_id"] for document in check_docs}
+    for document in apps(settings).find({"sealed": True, "kind": {"$ne": "runtime"}}).sort("sort", 1):
+        if not address_allows(document):
+            continue
+        if _is_check(document):
+            if document["_id"] not in seen_checks:
+                check_docs.append(document)
+            continue
+        if status and status != "all" and document.get("status") != status:
+            continue
+        if document["_id"] in seen:
+            continue
+        documents.append(document)
+        own.append(document)
+        seen.add(document["_id"])
+
+
+def _is_check(document: dict) -> bool:
+    """A quarantine box is a check from the moment it exists. It never sits with the apps."""
+    return (document.get("runtime") or {}).get("profile") == "quarantine"
+
+
 def _closed_check(document: dict) -> bool:
-    runtime = document.get("runtime") or {}
-    return runtime.get("profile") == "quarantine" and document.get("verdict") in {"clear", "suspicious"}
+    return _is_check(document) and document.get("verdict") in {"clear", "suspicious"}
 
 
 def _public_check(document: dict) -> dict:
+    verdict = document.get("verdict")
+    if verdict not in {"clear", "suspicious"}:
+        verdict = "pending"
+    specimen = document.get("specimen") or ""
+    if not specimen and verdict != "pending":
+        specimen = "No file was in the box."
     return {
         "id": document["_id"],
         "name": document.get("name") or "Check",
-        "specimen": document.get("specimen") or "No file was in the box.",
-        "verdict": document.get("verdict"),
+        "specimen": specimen,
+        "verdict": verdict,
         "report": document.get("report") or "",
     }
 
@@ -453,13 +505,14 @@ class Home:
     @_guard
     def on_get(self, req: falcon.Request, resp: falcon.Response) -> None:
         user = signed_in_user(self.settings)
-        owned = {
-            document["draftKey"]: document
+        owned_docs = [
+            document
             for document in apps(self.settings).find(_catalog(user["_id"], shared=False))
-            if document.get("draftKey")
-        }
+            if address_allows(document) and not _is_check(document)
+        ]
+        owned = {document["draftKey"]: document for document in owned_docs if document.get("draftKey")}
         featured = [public_app(owned[key], self.settings) for key in FEATURED_KEYS if key in owned]
-        own_count = apps(self.settings).count_documents(_catalog(user["_id"], shared=False))
+        own_count = len(owned_docs)
         resp.media = {
             **HOME_COPY,
             "seeAllLabel": f"See all {own_count}",
@@ -501,7 +554,8 @@ class AppPower:
     @_guard
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str, action: str) -> None:
         user = signed_in_user(self.settings)
-        _load_app(self.settings, app_id, user, owner_only=True)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         try:
             if action == "start":
                 document = start_catalog_app(self.settings, _parse_app_id(app_id), self.runner, self.healthy)
@@ -530,6 +584,7 @@ class AppPrompt:
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
         document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         runtime = document.get("runtime") or {}
         if runtime.get("profile") == "quarantine" and document.get("verdict") in {"clear", "suspicious"}:
             raise falcon.HTTPConflict(description="This check is finished.")
@@ -622,6 +677,7 @@ class AppPrompt:
                             session_id=session,
                         )
                         _settle(self.settings, self.services, document)
+                        refresh_published(self.settings, document["_id"])
                         resp.media = {"reply": reply, "message": public_turn(assistant)}
             except HermesError as exc:
                 self._drop_attempt(document["_id"], user_turn["_id"], progress_ids)
@@ -697,6 +753,7 @@ class AppDecision:
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
         document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         runtime = document.get("runtime") or {}
         port = runtime.get("harnessPort")
         key = runtime.get("apiServerKey")
@@ -781,6 +838,7 @@ class AppDecision:
                         session_id=session,
                     )
                     _settle(self.settings, self.services, document)
+                    refresh_published(self.settings, document["_id"])
         except Exception:
             log.exception("App %s stopped before the turn finished", document["_id"])
             _stop_plan(self.settings, document["_id"])
@@ -833,8 +891,9 @@ class AppManage:
             "color": document.get("color"),
             "icon": document.get("icon"),
             "runnable": bool(runtime.get("containerName")),
-            "deletable": document.get("ownerId") == user["_id"] and not document.get("sharedBy"),
-            "canPrompt": document.get("ownerId") == user["_id"] and not _closed_check(document),
+            "deletable": document.get("ownerId") == user["_id"] and not document.get("sharedBy") and not document.get("sealed"),
+            "canPrompt": document.get("ownerId") == user["_id"] and not _closed_check(document) and not document.get("sealed"),
+            "sealed": bool(document.get("sealed")),
             "sharedBy": _shared_by_name(self.settings, document, user),
             "shares": _share_rows(self.settings, document, user),
             "statusError": document.get("statusError"),
@@ -855,6 +914,8 @@ class AppManage:
             "box": box_copy(runtime["profile"]) if runtime.get("profile") in {"web", "data", "quarantine"} else None,
             "boxPrompt": (box_prompt(document) or {}).get("text") or None,
             "check": runtime.get("profile") == "quarantine",
+            "files": given_files(runtime.get("dataDir") or "", runtime.get("profile")),
+            "secrets": public_secrets(document),
         }
 
 
@@ -928,6 +989,7 @@ class AppFiles:
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
         document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         data_dir = (document.get("runtime") or {}).get("dataDir")
         if not isinstance(data_dir, str) or not data_dir:
             raise falcon.HTTPConflict(description="This app is not ready for a file")
@@ -939,6 +1001,53 @@ class AppFiles:
         resp.media = {"files": saved}
 
 
+class AppSecrets:
+    """The person leaves a secret for the app, or reads one the app left."""
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
+        body = read_json(req)
+        try:
+            leave_secret(self.settings, document["_id"], name=body.get("name"), value=body.get("value"), to="agent")
+        except SecretError as exc:
+            _secret_http(exc)
+        fresh = apps(self.settings).find_one({"_id": document["_id"]}) or document
+        resp.media = {"secrets": public_secrets(fresh)}
+
+
+class AppSecretRead:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    @_guard
+    def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str, secret_id: str) -> None:
+        user = signed_in_user(self.settings)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
+        try:
+            taken = take_secret(self.settings, document["_id"], to="user", secret_id=secret_id)
+        except SecretError as exc:
+            _secret_http(exc)
+        if taken is None:
+            raise falcon.HTTPNotFound(description="That secret is already gone")
+        fresh = apps(self.settings).find_one({"_id": document["_id"]}) or document
+        resp.media = {"name": taken["name"], "value": taken["value"], "secrets": public_secrets(fresh)}
+
+
+def _secret_http(exc: SecretError) -> None:
+    if exc.code == "profile":
+        raise falcon.HTTPConflict(description="Secrets stay in a Data box")
+    if exc.code == "full":
+        raise falcon.HTTPConflict(description="Too many secrets are waiting")
+    raise falcon.HTTPBadRequest(description="Write a name and a secret")
+
+
 class AppRecord:
     def __init__(self, settings: Settings, services) -> None:
         self.settings = settings
@@ -947,7 +1056,8 @@ class AppRecord:
     @_guard
     def on_delete(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
-        _load_app(self.settings, app_id, user, owner_only=True)
+        document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         code = read_json(req).get("code")
         if not isinstance(code, str) or not admin_code_matches(self.settings, code):
             raise falcon.HTTPForbidden(description="That code does not delete this app")
@@ -1204,8 +1314,12 @@ def _ask_model(settings: Settings, services, messages: list[dict]) -> str:
 
 
 def _creator_turns(settings: Settings) -> list[dict]:
-    query = {"appId": CREATOR_ID, "role": {"$in": ["user", "assistant"]}}
+    query = {"appId": CREATOR_ID, "role": {"$in": ["user", "assistant"]}, "visitorIp": current_ip()}
     return list(messages(settings).find(query).sort("createdAt", 1))
+
+
+def _sketch_id() -> str:
+    return f"{SKETCH_ID}-{current_ip()}"
 
 
 def _blank_sketch() -> dict:
@@ -1213,7 +1327,7 @@ def _blank_sketch() -> dict:
 
 
 def _load_sketch(settings: Settings) -> dict:
-    document = messages(settings).find_one({"_id": SKETCH_ID, "role": "sketch"}) or {}
+    document = messages(settings).find_one({"_id": _sketch_id(), "role": "sketch"}) or {}
     icon = document.get("icon") or ""
     if icon not in SKETCH_ICONS:
         icon = ""
@@ -1227,11 +1341,12 @@ def _load_sketch(settings: Settings) -> dict:
 
 def _save_sketch(settings: Settings, sketch: dict) -> None:
     messages(settings).update_one(
-        {"_id": SKETCH_ID},
+        {"_id": _sketch_id()},
         {
             "$set": {
                 "appId": CREATOR_ID,
                 "role": "sketch",
+                "visitorIp": current_ip(),
                 "name": sketch["name"],
                 "summary": sketch["summary"],
                 "icon": sketch["icon"],
@@ -1384,7 +1499,14 @@ class CreatorMessages:
         signed_in_user(self.settings)
         content = clean_content(read_json(req).get("content"))
         prior = _creator_turns(self.settings)
-        user_turn = {"_id": new_id(), "appId": CREATOR_ID, "role": "user", "content": content, "createdAt": now_ms()}
+        user_turn = {
+            "_id": new_id(),
+            "appId": CREATOR_ID,
+            "role": "user",
+            "visitorIp": current_ip(),
+            "content": content,
+            "createdAt": now_ms(),
+        }
         messages(self.settings).insert_one(user_turn)
         history = [{"role": "system", "content": RECEPTION}]
         history.extend({"role": turn["role"], "content": turn["content"]} for turn in prior)
@@ -1398,7 +1520,14 @@ class CreatorMessages:
             messages(self.settings).delete_one({"_id": user_turn["_id"]})
             raise falcon.HTTPBadGateway(description=str(exc)) from exc
         messages(self.settings).insert_one(
-            {"_id": new_id(), "appId": CREATOR_ID, "role": "assistant", "content": reply, "createdAt": now_ms()}
+            {
+                "_id": new_id(),
+                "appId": CREATOR_ID,
+                "role": "assistant",
+                "visitorIp": current_ip(),
+                "content": reply,
+                "createdAt": now_ms(),
+            }
         )
         _refresh_sketch(self.settings, self.services, _creator_turns(self.settings))
         resp.media = _creator_media(self.settings)
@@ -1411,7 +1540,7 @@ class CreatorReset:
     @_guard
     def on_post(self, req: falcon.Request, resp: falcon.Response) -> None:
         signed_in_user(self.settings)
-        messages(self.settings).delete_many({"appId": CREATOR_ID})
+        messages(self.settings).delete_many({"appId": CREATOR_ID, "visitorIp": current_ip()})
         resp.media = _creator_media(self.settings)
 
 
@@ -1448,7 +1577,7 @@ class CreatorMake:
                 chosen = known_profile(read_json(req).get("profile"))
                 if chosen is None:
                     raise falcon.HTTPBadRequest(description="Choose a box")
-                document = begin_hosted_app(self.settings, user["_id"], prompt, chosen)
+                document = begin_hosted_app(self.settings, user["_id"], prompt, chosen, req.remote_addr or "")
             finally:
                 release_hosted_reservation()
             app_id = document["_id"]
@@ -1478,7 +1607,7 @@ class CreatorMake:
             ]
             if copies:
                 messages(self.settings).insert_many(copies)
-            messages(self.settings).delete_many({"appId": CREATOR_ID})
+            messages(self.settings).delete_many({"appId": CREATOR_ID, "visitorIp": current_ip()})
             steps = _provision_steps(plan, stamp + len(copies))
             record_progress(self.settings, app_id, steps, stamp + len(copies))
             apps(self.settings).update_one({"_id": app_id}, {"$set": {"build.steps": steps, "prompt": prompt}})
@@ -1510,6 +1639,7 @@ class AppShare:
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
         document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         body = read_json(req)
         email = body.get("email")
         shared = body.get("shared")
@@ -1533,6 +1663,7 @@ class AppBuild:
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
         document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         app_id = document["_id"]
         if not (document.get("runtime") or {}).get("boxReady"):
             raise falcon.HTTPConflict(description="The container is not ready")
@@ -1542,7 +1673,11 @@ class AppBuild:
                 {"$set": {"runtime.buildStarted": True, "updatedAt": now_ms()}},
             )
             if claimed.modified_count and self.services is not None:
-                begin_start(self.settings, req.remote_addr or "")
+                try:
+                    begin_start(self.settings, req.remote_addr or "")
+                except TooMany:
+                    self._release_build(app_id)
+                    raise
 
                 def run(app_id: str = app_id) -> None:
                     try:
@@ -1562,10 +1697,18 @@ class AppBuild:
                 try:
                     self.services.spawn(run)
                 except Exception:
+                    self._release_build(app_id)
                     release_turn()
                     raise
         resp.status = falcon.HTTP_202
         resp.media = {"id": app_id}
+
+    def _release_build(self, app_id: str) -> None:
+        """A start that never ran must not leave the box looking busy."""
+        apps(self.settings).update_one(
+            {"_id": app_id},
+            {"$set": {"runtime.buildStarted": False, "updatedAt": now_ms()}},
+        )
 
 
 class AppPersist:
@@ -1578,6 +1721,7 @@ class AppPersist:
     def on_post(self, req: falcon.Request, resp: falcon.Response, app_id: str) -> None:
         user = signed_in_user(self.settings)
         document = _load_app(self.settings, app_id, user, owner_only=True)
+        _hold_sealed(document)
         code = read_json(req).get("code")
         if not isinstance(code, str) or not admin_code_matches(self.settings, code):
             raise falcon.HTTPForbidden(description="That code does not persist this app")

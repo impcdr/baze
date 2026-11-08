@@ -10,6 +10,7 @@ from urllib import error, request
 import falcon
 
 from baze_api.app_favicon import render_app_favicon
+from baze_api.identity import address_allows
 from baze_api.catalog import STUDIO_ID
 from baze_api.db import apps
 from baze_api.http import now_ms
@@ -82,6 +83,9 @@ class AppProxy:
             return
         document = apps(self.settings).find_one({"_id": match.group(1), "kind": {"$ne": "runtime"}})
         if document is None:
+            return
+        if not address_allows(document):
+            _plain(resp, falcon.HTTP_403, "This app was made from another address.")
             return
         suffix = match.group(2) or "/"
         if req.method in ("GET", "HEAD") and _FAVICON_PATH.match(suffix):

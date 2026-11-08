@@ -19,6 +19,7 @@ log = logging.getLogger("baze.proxy")
 CHAT_PATH = "/v1/chat/completions"
 MODELS_PATH = "/v1/models"
 ACCESS_PATH = "/v1/access"
+SECRETS_PATH = "/v1/secrets"
 
 
 def token_from(headers: dict[str, str]) -> str:
@@ -75,6 +76,8 @@ def proxy_request(
         return 200, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
     if method == "POST" and path == ACCESS_PATH:
         return _access(settings, headers, body)
+    if path == SECRETS_PATH and method in {"GET", "POST"}:
+        return _secrets(settings, headers, body, method)
     if method != "POST" or path != CHAT_PATH:
         return 404, {"Content-Type": "application/json"}, b'{"error":"not found"}'
     if not settings.vultr_api_key:
@@ -147,6 +150,39 @@ def _access(settings: Settings, headers: dict[str, str], body: bytes) -> tuple[i
         return 400, {"Content-Type": "application/json"}, b'{"error":"expected sites with a host and a why"}'
     submit_access(settings, document["_id"], sites)
     payload = b'{"ok":true}'
+    return 200, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
+
+
+def _secrets(settings: Settings, headers: dict[str, str], body: bytes, method: str) -> tuple[int, dict[str, str], bytes]:
+    """The agent leaves a secret, or takes one the person left. A read deletes it."""
+    from baze_api.secrets import SecretError, leave_secret, take_secret
+
+    token = token_from(headers)
+    document = apps(settings).find_one({"runtime.proxyToken": token}, {"_id": 1}) if token else None
+    if document is None:
+        return 401, {"Content-Type": "application/json"}, b'{"error":"proxy token required"}'
+    app_id = document["_id"]
+    try:
+        if method == "POST":
+            parsed = json.loads(body.decode("utf-8")) if body else None
+            if not isinstance(parsed, dict):
+                raise SecretError("name")
+            leave_secret(settings, app_id, name=parsed.get("name"), value=parsed.get("value"), to="user")
+            payload = b'{"ok":true}'
+            return 200, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
+        taken = take_secret(settings, app_id, to="agent")
+    except SecretError as exc:
+        if exc.code == "profile":
+            return 404, {"Content-Type": "application/json"}, b'{"error":"this box has no secrets"}'
+        if exc.code == "full":
+            return 409, {"Content-Type": "application/json"}, b'{"error":"too many secrets are waiting"}'
+        return 400, {"Content-Type": "application/json"}, b'{"error":"expected a name and a value"}'
+    except (UnicodeError, json.JSONDecodeError):
+        return 400, {"Content-Type": "application/json"}, b'{"error":"expected a name and a value"}'
+    if taken is None:
+        payload = b'{"name":null,"value":null}'
+    else:
+        payload = json.dumps({"name": taken["name"], "value": taken["value"]}).encode("utf-8")
     return 200, {"Content-Type": "application/json", "Content-Length": str(len(payload))}, payload
 
 

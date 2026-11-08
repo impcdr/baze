@@ -111,6 +111,17 @@ export class BazeApi {
     return this.http.post<{ reply: string }>(`/api/apps/${id}/decisions`, { allow });
   }
 
+  leaveSecret(id: string, name: string, value: string) {
+    return this.http.post<{ secrets: AppManage['secrets'] }>(`/api/apps/${id}/secrets`, { name, value });
+  }
+
+  readSecret(id: string, secretId: string) {
+    return this.http.post<{ name: string; value: string; secrets: AppManage['secrets'] }>(
+      `/api/apps/${id}/secrets/${secretId}`,
+      {},
+    );
+  }
+
   upload(id: string, files: File[]) {
     const body = new FormData();
     for (const file of files) body.append('file', file, file.name);

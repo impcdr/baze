@@ -252,7 +252,7 @@ def remove_app(settings: Settings, document: dict, runner) -> None:
         shutil.rmtree(f"{data_dir}-publish", ignore_errors=True)
 
 
-def begin_hosted_app(settings: Settings, owner_id: str, prompt: str, profile: str | None = None) -> dict:
+def begin_hosted_app(settings: Settings, owner_id: str, prompt: str, profile: str | None = None, creator_ip: str | None = None) -> dict:
     """Reserve the shelf row, ports, and page server. The container starts afterwards."""
     name = _app_name(prompt)
     summary = " ".join(prompt.split())[:160]
@@ -288,6 +288,7 @@ def begin_hosted_app(settings: Settings, owner_id: str, prompt: str, profile: st
             "updatedAt": stamp,
             "demo": False,
             "expiresAt": stamp + settings.ttl_hours * 3_600_000,
+            **({"creatorIp": creator_ip} if creator_ip else {}),
             "chat": {"hermesSessionId": None},
             "runtime": {
                 "containerName": f"baze-app-{app_id}",
@@ -676,7 +677,12 @@ def profile_access(settings: Settings, profile: str | None) -> str:
             'POST {"kind":"library"} or {"kind":"pdf"} or {"kind":"lookup"} '
             f"to http://baze-inference:{settings.proxy_port}/v1/access "
             "with Authorization: Bearer and the model API key. Then stop until the next message allows it. "
-            "Do not open a link before that. The records themselves are not in this box."
+            "Do not open a link before that. The records themselves are not in this box. "
+            "Anything you decide is a secret is given only this way. "
+            'POST {"name":"short name","value":"the secret"} '
+            f"to http://baze-inference:{settings.proxy_port}/v1/secrets for each one you leave them. "
+            "GET that address to take one they left. Reading deletes it. The value is not kept. "
+            "Do not put a secret in your reply. Tell the person it is in App Settings, under Secrets."
         )
     if profile == "quarantine":
         return (
@@ -939,6 +945,17 @@ def _close_quarantine(settings: Settings, app_id: str, runner, infer, runtime: d
         runner.remove(build_name)
     except Exception:
         log.exception("App %s box was not removed", app_id)
+
+
+def refresh_published(settings: Settings, app_id: str) -> None:
+    """Copy the latest page into the live folder. Records stay in the box and are read from there."""
+    document = apps(settings).find_one({"_id": app_id}, {"runtime": 1}) or {}
+    runtime = document.get("runtime") or {}
+    if runtime.get("profile") not in {"web", "data"} or not runtime.get("published"):
+        return
+    data_dir = runtime.get("dataDir") or ""
+    if data_dir:
+        publish_code(data_dir)
 
 
 def _go_live(settings: Settings, app_id: str, runner, prompt: str, reply: str, session: str | None) -> None:

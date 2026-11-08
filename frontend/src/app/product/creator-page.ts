@@ -208,7 +208,7 @@ export class CreatorPage {
         if (page.steps.length) this.steps.set(page.steps);
         this.scroll();
         if (page.boxReady) {
-          void this.router.navigate(['/apps', id]);
+          void this.router.navigate([page.check ? '/verify' : '/apps', id]);
           return;
         }
         if (page.status === 'error') {

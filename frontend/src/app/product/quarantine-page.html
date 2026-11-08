@@ -1,0 +1,23 @@
+@if (checks(); as checks) {
+  <section class="flex flex-col" data-testid="quarantine">
+    <h1 class="font-display text-2xl tracking-tight">Verify</h1>
+    @if (checks.length === 0) {
+      <p class="bz-copy text-muted-foreground mt-4">Nothing to verify.</p>
+    } @else {
+      <ul class="mt-2">
+        @for (check of checks; track check.id) {
+          <li class="border-b">
+            <a
+              class="grid grid-cols-1 items-baseline gap-x-6 gap-y-1 py-3 no-underline sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]"
+              [routerLink]="['/verify', check.id]"
+            >
+              <span class="truncate text-sm font-medium">{{ check.name }}</span>
+              <span class="bz-copy truncate text-muted-foreground">{{ check.specimen }}</span>
+              <span hlmBadge [variant]="verdictTone(check.verdict)">{{ verdictLabel(check.verdict) }}</span>
+            </a>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+}

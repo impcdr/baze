@@ -58,6 +58,7 @@ export interface ShelfApp {
   deletable: boolean;
   statusError: string | null;
   demo: boolean;
+  sealed: boolean;
   expiresAt: number | null;
 }
 
@@ -118,6 +119,7 @@ export interface AppManage {
   allowed: string[];
   closed: string[];
   canPrompt: boolean;
+  sealed: boolean;
   sharedBy: string | null;
   shares: AppShareRow[];
   demo: boolean;
@@ -125,6 +127,34 @@ export interface AppManage {
   box: BoxChoice | null;
   boxPrompt: string | null;
   check: boolean;
+  files?: GivenFile[];
+  secrets: AppSecrets | null;
+}
+
+export interface AppSecrets {
+  forYou: SecretNote[];
+  forApp: SecretNote[];
+  log: SecretLog[];
+}
+
+export interface SecretNote {
+  id: string;
+  name: string;
+  at: number;
+}
+
+export interface SecretLog {
+  id: string;
+  name: string;
+  to: 'agent' | 'user';
+  event: 'left' | 'read';
+  at: number;
+}
+
+export interface GivenFile {
+  name: string;
+  size: number;
+  where: 'specimen' | 'uploads' | 'record' | string;
 }
 
 export interface AppStep {
@@ -176,7 +206,7 @@ export interface ShelfCheck {
   id: string;
   name: string;
   specimen: string;
-  verdict: 'clear' | 'suspicious';
+  verdict: 'clear' | 'suspicious' | 'pending';
   report: string;
 }
 

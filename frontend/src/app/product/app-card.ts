@@ -58,7 +58,7 @@ export class AppCard {
 
   private power(action: 'start' | 'stop'): void {
     const app = this.shown();
-    if (!app.runnable || this.pending()) return;
+    if (app.sealed || !app.runnable || this.pending()) return;
     this.pending.set(action);
     this.api.power(app.id, action).subscribe({
       next: (next) => {

@@ -4,11 +4,28 @@ import os
 import subprocess
 from pathlib import Path
 
-from baze_api.boxes import _review, access_library, call_attempts, plain_report, program_commands, secret_touches
+from baze_api.boxes import _review, access_library, call_attempts, given_files, plain_report, program_commands, secret_touches
 
 
 def _clear(messages):
     return '{"verdict": "clear", "report": "Nothing stood out."}'
+
+
+def test_given_files_lists_each_box(tmp_path):
+    (tmp_path / "uploads").mkdir()
+    (tmp_path / "uploads" / "menu.txt").write_text("soup")
+    (tmp_path / "specimen").mkdir()
+    (tmp_path / "specimen" / "grab.py").write_text("x")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "invoices.json").write_text("[]")
+    (tmp_path / "app" / "index.html").write_text("<p>hi</p>")
+    assert given_files(str(tmp_path), "web") == [{"name": "menu.txt", "size": 4, "where": "uploads"}]
+    data = given_files(str(tmp_path), "data")
+    assert [item["name"] for item in data] == ["menu.txt", "invoices.json"]
+    assert data[1]["where"] == "record"
+    quarantine = given_files(str(tmp_path), "quarantine")
+    assert [item["name"] for item in quarantine] == ["grab.py", "menu.txt"]
+    assert quarantine[0]["where"] == "specimen"
 
 
 def test_the_watcher_records_secret_opens_and_ignores_ordinary_files(tmp_path):

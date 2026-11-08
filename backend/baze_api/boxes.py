@@ -329,6 +329,8 @@ def run_container_args(settings, document: dict) -> list[str]:
         f"127.0.0.1:{runtime['hostPort']}:8080",
         "-v",
         f"{publish}:/opt/publish",
+        "-v",
+        f"{runtime['dataDir']}/app:/opt/box:ro",
         settings.hermes_image,
         "python3",
         "/opt/publish/app.py" if (publish / "app.py").is_file() else "/opt/publish/server.py",
@@ -362,6 +364,55 @@ def specimen_label(data_dir: str) -> str:
         return _EMPTY_SPECIMEN
     parts = [f"{path.name} ({path.stat().st_size} bytes)" for path in files[:8]]
     return ", ".join(parts)
+
+
+def given_files(data_dir: str, profile: str | None = None) -> list[dict]:
+    """Names and sizes of files given to this box. The bytes stay on disk."""
+    if not data_dir:
+        return []
+    root = Path(data_dir)
+    folders = [("uploads", "uploads")]
+    if profile == "quarantine":
+        folders.insert(0, ("specimen", "specimen"))
+    found = _files_in(folders, root)
+    if profile == "data":
+        app_dir = root / "app"
+        if app_dir.is_dir():
+            for path in sorted(app_dir.iterdir()):
+                if not path.is_file() or not is_record(path):
+                    continue
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    continue
+                found.append({"name": path.name, "size": size, "where": "record"})
+                if len(found) >= 40:
+                    break
+    return found[:40]
+
+
+def _files_in(folders: list[tuple[str, str]], root: Path) -> list[dict]:
+    found = []
+    for folder, where in folders:
+        base = root / folder
+        if not base.is_dir():
+            continue
+        try:
+            home = base.resolve()
+        except OSError:
+            continue
+        for path in sorted(base.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                path.resolve().relative_to(home)
+                size = path.stat().st_size
+            except (OSError, ValueError):
+                continue
+            found.append({"name": path.relative_to(base).as_posix(), "size": size, "where": where})
+            if len(found) >= 40:
+                return found
+    return found
 
 
 def _specimen_text(data_dir: str) -> list[str]:

@@ -276,6 +276,7 @@ def test_creating_an_app_hosts_it_and_deletion_removes_the_box(settings, tmp_pat
     published = next(line for line in runs if f"baze-app-{app_id}" in line)
     assert ":8080" in published and "--network bridge" in published
     assert published.endswith("python3 /opt/publish/server.py")
+    assert f"{tmp_path}/{app_id}/app:/opt/box:ro" in published
     assert VULTR_KEY not in build and VULTR_KEY not in published
 
     shelf = client.simulate_get("/api/apps")
@@ -746,6 +747,8 @@ def test_chart_updates_are_checked_and_files_reach_the_prompt(settings, tmp_path
         json={"content": "Use the list", "attachments": [stored]},
     )
     assert sent.status_code == 200
+    listed = client.simulate_get(f"/api/apps/{app_id}/manage")
+    assert listed.json["files"] == [{"name": stored, "size": 4, "where": "uploads"}]
     assert f"/opt/data/uploads/{stored}" in hermes.calls[0]["content"]
     assert "Do not run them." in hermes.calls[0]["content"]
     assert hermes.calls[1]["content"].startswith("Reply with one JSON object")
@@ -1446,6 +1449,7 @@ def test_a_third_temporary_app_is_refused(settings, tmp_path, monkeypatch):
         stored = apps(tuned).find_one({"_id": made.json["id"]})
         assert stored["demo"] is False
         assert stored["expiresAt"] > stored["createdAt"]
+        assert stored["creatorIp"] == "203.0.113.10"
     client.simulate_post("/api/creator/messages", json={"content": "Another pantry list"}, **visitor)
     refused = client.simulate_post("/api/creator/make", json={"profile": "web"}, **visitor)
     assert refused.status_code == 429
@@ -1493,6 +1497,181 @@ def test_the_fifth_start_from_one_visitor_is_refused(settings, tmp_path):
         remote_addr="203.0.113.21",
     )
     assert other.status_code == 200
+
+
+def test_a_later_edit_reaches_the_live_page_and_the_record_stays_in_the_box(settings, tmp_path):
+    class PageHermes(FakeHermes):
+        def complete(self, *, base_url, api_key, content, session_id):
+            self.calls.append({"content": content})
+            page = "<!doctype html><html><body><h1>Pantry</h1></body></html>"
+            return page, session_id or "session-built"
+
+    client, _tuned = _app(settings, tmp_path, FakeDocker(), PageHermes(), infer=_reception)
+    client.simulate_post("/api/creator/messages", json={"content": "A pantry list"})
+    made = client.simulate_post("/api/creator/make", json={"profile": "data"})
+    app_id = made.json["id"]
+    (tmp_path / app_id / "app" / "records.json").write_text('{"jobs":[{"customer":"Eva","ready":false}]}')
+    client.simulate_post(f"/api/apps/{app_id}/build")
+    publish = tmp_path / f"{app_id}-publish"
+    assert not (publish / "records.json").exists()
+    (tmp_path / app_id / "app" / "index.html").write_text(
+        "<!doctype html><html><body><h1>Pantry</h1><p>Eva is ready</p></body></html>"
+    )
+    (tmp_path / app_id / "app" / "records.json").write_text('{"jobs":[{"customer":"Eva","ready":true}]}')
+    sent = client.simulate_post(f"/api/apps/{app_id}/prompt", json={"content": "Mark Eva ready"})
+    assert sent.status_code == 200
+    assert "Eva is ready" in (publish / "index.html").read_text()
+    assert not (publish / "records.json").exists()
+    assert "ready" in (tmp_path / app_id / "app" / "records.json").read_text()
+
+
+def test_a_refused_build_leaves_the_box_ready_to_try_again(settings, tmp_path):
+    from baze_api import limits
+    from baze_api.db import apps
+    from baze_api.limits import begin_start, release_turn
+
+    class PageHermes(FakeHermes):
+        def complete(self, *, base_url, api_key, content, session_id):
+            self.calls.append({"content": content})
+            page = "<!doctype html><html><body><h1>Pantry</h1></body></html>"
+            return page, "session-built"
+
+    client, tuned = _app(settings, tmp_path, FakeDocker(), PageHermes(), infer=_reception)
+    visitor = {"remote_addr": "203.0.113.77"}
+    limits._STARTS.pop("203.0.113.77", None)
+    client.simulate_post("/api/creator/messages", json={"content": "A pantry list"}, **visitor)
+    made = client.simulate_post("/api/creator/make", json={"profile": "web"}, **visitor)
+    assert made.status_code == 201
+    app_id = made.json["id"]
+    for _ in range(tuned.ip_starts_per_hour - 1):
+        begin_start(tuned, "203.0.113.77")
+        release_turn()
+    refused = client.simulate_post(f"/api/apps/{app_id}/build", **visitor)
+    assert refused.status_code == 429
+    assert refused.json["description"] == "This visitor has started enough apps for now. Try again later."
+    assert apps(tuned).find_one({"_id": app_id})["runtime"].get("buildStarted") is False
+    again = client.simulate_post(f"/api/apps/{app_id}/build", **visitor)
+    assert again.status_code == 429
+    assert apps(tuned).find_one({"_id": app_id})["status"] == "building"
+    assert apps(tuned).find_one({"_id": app_id})["runtime"].get("buildStarted") is False
+    limits._STARTS.pop("203.0.113.77", None)
+    built = client.simulate_post(f"/api/apps/{app_id}/build", **visitor)
+    assert built.status_code == 202
+    assert client.simulate_get(f"/api/apps/{app_id}/manage", **visitor).json["status"] == "live"
+
+
+def test_a_new_app_is_sent_only_to_the_address_that_made_it(settings, tmp_path):
+    from baze_api.catalog import USER_EMAIL
+    from baze_api.db import users
+
+    client, tuned = _app(settings, tmp_path, FakeDocker(), FakeHermes(), infer=_reception)
+    owner = users(tuned).find_one({"email": USER_EMAIL})
+    app_id = "c" * 32
+    check_id = "d" * 32
+    apps(tuned).insert_one(
+        {
+            "_id": app_id,
+            "ownerId": owner["_id"],
+            "slug": "pantry-lock",
+            "name": "Pantry",
+            "summary": "Rice and tea",
+            "status": "stopped",
+            "sort": 50,
+            "creatorIp": "203.0.113.40",
+            "runtime": {"profile": "web"},
+            "demo": False,
+        }
+    )
+    apps(tuned).insert_one(
+        {
+            "_id": check_id,
+            "ownerId": owner["_id"],
+            "slug": "file-check-lock",
+            "name": "File check",
+            "status": "closed",
+            "verdict": "clear",
+            "sort": 51,
+            "creatorIp": "203.0.113.40",
+            "runtime": {"profile": "quarantine"},
+            "demo": False,
+        }
+    )
+    maker = {"remote_addr": "203.0.113.40"}
+    other = {"remote_addr": "203.0.113.41"}
+    seen = client.simulate_get("/api/apps", **maker).json
+    assert app_id in [item["id"] for item in seen["apps"]]
+    assert check_id in [item["id"] for item in seen["checks"]]
+    hidden = client.simulate_get("/api/apps", **other).json
+    assert app_id not in [item["id"] for item in hidden["apps"]]
+    assert all(item["id"] != check_id for item in hidden["checks"])
+    assert client.simulate_get(f"/api/apps/{app_id}/manage", **maker).status_code == 200
+    missing = client.simulate_get(f"/api/apps/{app_id}/manage", **other)
+    assert missing.status_code == 404
+    assert missing.json["description"] == "App not found"
+    refused = client.simulate_get(f"/{app_id}", **other)
+    assert refused.status_code == 403
+    assert refused.text == "This app was made from another address."
+    own_page = client.simulate_get(f"/{app_id}", **maker)
+    assert own_page.status_code == 503
+    assert "another address" not in own_page.text
+    assert client.simulate_get(f"/api/apps/{STUDIO_ID}/manage", **maker).status_code == 200
+    assert client.simulate_get(f"/api/apps/{STUDIO_ID}/manage", **other).status_code == 200
+
+    assert client.simulate_post("/api/creator/messages", json={"content": "Mine"}, **maker).status_code == 200
+    assert client.simulate_post("/api/creator/messages", json={"content": "Theirs"}, **other).status_code == 200
+    mine = client.simulate_get("/api/creator", **maker).json
+    assert [turn["content"] for turn in mine["messages"] if turn["role"] == "user"] == ["Mine"]
+    theirs = client.simulate_get("/api/creator", **other).json
+    assert [turn["content"] for turn in theirs["messages"] if turn["role"] == "user"] == ["Theirs"]
+    cleared = client.simulate_post("/api/creator/reset", **maker)
+    assert cleared.status_code == 200
+    assert cleared.json["messages"] == []
+    kept = client.simulate_get("/api/creator", **other).json
+    assert [turn["content"] for turn in kept["messages"] if turn["role"] == "user"] == ["Theirs"]
+
+
+def test_a_sealed_demo_is_on_every_shelf_and_cannot_be_changed(settings, tmp_path):
+    from baze_api.catalog import USER_EMAIL
+    from baze_api.db import users
+
+    client, tuned = _app(settings, tmp_path, FakeDocker(), FakeHermes())
+    owner = users(tuned).find_one({"email": USER_EMAIL})
+    guest = users(tuned).find_one({"email": "max.mustermann@example.com"})
+    app_id = "e" * 32
+    apps(tuned).insert_one(
+        {
+            "_id": app_id,
+            "ownerId": owner["_id"],
+            "slug": "sealed-harbor",
+            "name": "Elbe Tide",
+            "summary": "Harbor weather",
+            "status": "live",
+            "sort": 3,
+            "sealed": True,
+            "demo": True,
+            "sharedWith": [guest["_id"]],
+            "runtime": {"containerName": f"baze-app-{app_id}", "profile": "web"},
+        }
+    )
+    mine = client.simulate_get("/api/apps").json
+    assert app_id in [item["id"] for item in mine["apps"]]
+    assert app_id not in [item["id"] for item in mine["shared"]]
+    theirs = client.simulate_get("/api/apps", headers={"Cookie": "baze_user=max.mustermann@example.com"}).json
+    assert app_id in [item["id"] for item in theirs["apps"]]
+    assert app_id not in [item["id"] for item in theirs["shared"]]
+    manage = client.simulate_get(f"/api/apps/{app_id}/manage").json
+    assert manage["sealed"] is True
+    assert manage["canPrompt"] is False
+    assert manage["deletable"] is False
+    guest_page = client.simulate_get(
+        f"/api/apps/{app_id}/manage",
+        headers={"Cookie": "baze_user=max.mustermann@example.com"},
+    )
+    assert guest_page.status_code == 200
+    assert guest_page.json["sealed"] is True
+    refused = client.simulate_post(f"/api/apps/{app_id}/prompt", json={"content": "Change the title"})
+    assert refused.status_code == 403
+    assert refused.json["description"] == "This demo stays as it is."
 
 
 def test_reads_stay_open_when_starts_are_used_up(settings, tmp_path):
@@ -1731,6 +1910,7 @@ def test_a_web_box_does_not_pause_for_a_public_site(settings, tmp_path):
     assert "The page may call public sites." not in joined
     assert "Do not stop to ask for an ordinary public website." not in joined
     assert "Two short sentences about what the app does." in joined
+    assert "/v1/secrets" not in joined
     from baze_api.app_proxy import connect_policy
     from baze_api.db import apps
 
@@ -1797,6 +1977,13 @@ def test_a_data_box_asks_before_a_lookup_and_leaves_records_behind(settings, tmp
     assert allowed.status_code == 200
     assert allowed.json["reply"] == "You allowed it."
     assert any("You allowed it." in call["content"] for call in hermes.calls)
+    assert any(
+        "/v1/secrets" in call["content"]
+        and "Anything you decide is a secret is given only this way." in call["content"]
+        and "Do not put a secret in your reply." in call["content"]
+        and "App Settings, under Secrets." in call["content"]
+        for call in hermes.calls
+    )
     stored = apps(tuned).find_one({"_id": app_id})
     assert stored["runtime"]["boxAllows"] == ["lookup"]
     live = client.simulate_get(f"/api/apps/{app_id}/manage")
@@ -1804,6 +1991,31 @@ def test_a_data_box_asks_before_a_lookup_and_leaves_records_behind(settings, tmp
     dest = tmp_path / "copied"
     copy_code(source, dest)
     assert not (dest / "invoices.json").exists()
+
+
+def test_a_quarantine_check_is_pending_on_verify_and_absent_from_apps(settings, tmp_path):
+    from baze_api.catalog import USER_EMAIL
+    from baze_api.db import users
+
+    client, tuned = _app(settings, tmp_path, FakeDocker(), FakeHermes())
+    owner = users(tuned).find_one({"email": USER_EMAIL})
+    app_id = "e" * 32
+    apps(tuned).insert_one(
+        {
+            "_id": app_id,
+            "ownerId": owner["_id"],
+            "name": "File under check",
+            "status": "building",
+            "sort": 60,
+            "runtime": {"profile": "quarantine"},
+            "demo": False,
+        }
+    )
+    shelf = client.simulate_get("/api/apps").json
+    assert all(item["id"] != app_id for item in shelf["apps"])
+    check = next(item for item in shelf["checks"] if item["id"] == app_id)
+    assert check["verdict"] == "pending"
+    assert check["specimen"] == ""
 
 
 def test_a_quarantine_box_reports_and_does_not_publish_the_file(settings, tmp_path):
@@ -1837,6 +2049,7 @@ def test_a_quarantine_box_reports_and_does_not_publish_the_file(settings, tmp_pa
     client.simulate_post(f"/api/apps/{app_id}/build")
     manage = client.simulate_get(f"/api/apps/{app_id}/manage")
     assert manage.json["check"] is True
+    assert manage.json["files"] == [{"name": "sample.txt", "size": 25, "where": "specimen"}]
     assert manage.json["status"] == "closed"
     assert manage.json["canPrompt"] is False
     assert manage.json["box"]["name"] == "Quarantine box"
@@ -1891,3 +2104,84 @@ def test_the_make_choice_uses_the_context_reception_gathered(settings, tmp_path)
     talked = client.simulate_post("/api/creator/messages", json={"content": "Invoices for the shop"})
     assert "box" not in talked.json["messages"][-1]["content"].lower()
     assert talked.json["recommended"] == "data"
+
+
+def test_a_data_box_secret_is_read_once_and_the_value_leaves_the_log(settings, tmp_path):
+    from baze_api.catalog import USER_EMAIL
+    from baze_api.db import users
+
+    client, tuned = _app(settings, tmp_path, FakeDocker(), FakeHermes())
+    owner = users(tuned).find_one({"email": USER_EMAIL})
+    app_id = "c" * 32
+    apps(tuned).insert_one(
+        {
+            "_id": app_id,
+            "ownerId": owner["_id"],
+            "name": "Hours",
+            "status": "live",
+            "runtime": {"profile": "data", "proxyToken": "proxy-secret", "dataDir": ""},
+        }
+    )
+    left = client.simulate_post(f"/api/apps/{app_id}/secrets", json={"name": "Max", "value": "max-7364"})
+    assert left.status_code == 200
+    assert left.json["secrets"]["forApp"][0]["name"] == "Max"
+    assert "max-7364" not in left.text
+    manage = client.simulate_get(f"/api/apps/{app_id}/manage")
+    assert manage.json["secrets"]["log"][0]["event"] == "left"
+    assert manage.json["secrets"]["log"][0]["to"] == "agent"
+    assert "max-7364" not in manage.text
+    taken = proxy_request(
+        method="GET",
+        path="/v1/secrets",
+        headers={"Authorization": "Bearer proxy-secret"},
+        body=b"",
+        settings=tuned,
+        token_ok=lambda token: token == "proxy-secret",
+    )
+    assert taken[0] == 200
+    assert json.loads(taken[2]) == {"name": "Max", "value": "max-7364"}
+    empty = proxy_request(
+        method="GET",
+        path="/v1/secrets",
+        headers={"Authorization": "Bearer proxy-secret"},
+        body=b"",
+        settings=tuned,
+        token_ok=lambda token: token == "proxy-secret",
+    )
+    assert json.loads(empty[2]) == {"name": None, "value": None}
+    after = client.simulate_get(f"/api/apps/{app_id}/manage")
+    assert after.json["secrets"]["forApp"] == []
+    assert after.json["secrets"]["log"][1]["event"] == "read"
+    assert "max-7364" not in after.text
+    stored = apps(tuned).find_one({"_id": app_id})
+    assert "max-7364" not in json.dumps(stored.get("runtime", {}).get("secretLog"))
+    handed = proxy_request(
+        method="POST",
+        path="/v1/secrets",
+        headers={"Authorization": "Bearer proxy-secret", "Content-Type": "application/json"},
+        body=b'{"name":"Admin","value":"admin-4821"}',
+        settings=tuned,
+        token_ok=lambda token: token == "proxy-secret",
+    )
+    assert handed[0] == 200
+    waiting = client.simulate_get(f"/api/apps/{app_id}/manage")
+    note = waiting.json["secrets"]["forYou"][0]
+    assert note["name"] == "Admin"
+    assert "admin-4821" not in waiting.text
+    read = client.simulate_post(f"/api/apps/{app_id}/secrets/{note['id']}")
+    assert read.status_code == 200
+    assert read.json["value"] == "admin-4821"
+    gone = client.simulate_post(f"/api/apps/{app_id}/secrets/{note['id']}")
+    assert gone.status_code == 404
+    apps(tuned).update_one({"_id": app_id}, {"$set": {"runtime.profile": "web"}})
+    refused = client.simulate_post(f"/api/apps/{app_id}/secrets", json={"name": "Max", "value": "again"})
+    assert refused.status_code == 409
+    blocked = proxy_request(
+        method="GET",
+        path="/v1/secrets",
+        headers={"Authorization": "Bearer proxy-secret"},
+        body=b"",
+        settings=tuned,
+        token_ok=lambda token: token == "proxy-secret",
+    )
+    assert blocked[0] == 404

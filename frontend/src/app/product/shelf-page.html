@@ -17,7 +17,7 @@
         </button>
     </div>
 
-    @if (shelf.apps.length === 0 && shelf.shared.length === 0 && shelf.checks.length === 0) {
+    @if (shelf.apps.length === 0 && shelf.shared.length === 0) {
       <div hlmEmpty class="bg-card rounded-xl py-12">
         <div hlmEmptyHeader>
           <h2 hlmEmptyTitle>{{ shelf.empty }}</h2>
@@ -43,26 +43,6 @@
               <bz-app-card [app]="app" (removed)="reload()" />
             }
           </div>
-        </div>
-      }
-
-      @if (shelf.checks.length > 0) {
-        <div class="flex flex-col gap-4">
-          <h2 class="font-display text-2xl tracking-tight">Quarantine</h2>
-          <ul class="flex flex-col gap-3">
-            @for (check of shelf.checks; track check.id) {
-              <li class="bg-card flex flex-col gap-2 rounded-xl p-4">
-                <a class="font-display text-lg leading-tight" [routerLink]="['/apps', check.id]">{{ check.name }}</a>
-                <p class="bz-copy"><span class="text-muted-foreground">Specimen. </span>{{ check.specimen }}</p>
-                <p>
-                  <span hlmBadge [variant]="check.verdict === 'clear' ? 'success' : 'warning'">
-                    {{ check.verdict === 'clear' ? 'Clear' : 'Suspicious' }}
-                  </span>
-                </p>
-                <p class="bz-copy">{{ check.report }}</p>
-              </li>
-            }
-          </ul>
         </div>
       }
     }

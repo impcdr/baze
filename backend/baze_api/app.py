@@ -21,6 +21,8 @@ from baze_api.product import (
     AppDecision,
     AppFiles,
     AppManage,
+    AppSecretRead,
+    AppSecrets,
     AppShare,
     AppPersist,
     AppPower,
@@ -57,6 +59,8 @@ def create_app(settings: Settings | None = None, services: RuntimeServices | Non
     app.add_route("/api/apps/{app_id}/prompt", AppPrompt(settings, services.hermes, services))
     app.add_route("/api/apps/{app_id}/decisions", AppDecision(settings, services))
     app.add_route("/api/apps/{app_id}/files", AppFiles(settings))
+    app.add_route("/api/apps/{app_id}/secrets/{secret_id}", AppSecretRead(settings))
+    app.add_route("/api/apps/{app_id}/secrets", AppSecrets(settings))
     app.add_route("/api/apps/{app_id}/manage", AppManage(settings))
     app.add_route("/api/apps/{app_id}/share", AppShare(settings))
     app.add_route("/api/apps/{app_id}/persist", AppPersist(settings))

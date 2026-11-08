@@ -87,6 +87,6 @@ def load_settings() -> Settings:
         turn_cap=max(1, int(os.environ.get("BAZE_TURN_CAP", "2"))),
         ip_starts_per_hour=max(1, int(os.environ.get("BAZE_IP_STARTS_PER_HOUR", "4"))),
         ip_starts_per_day=max(1, int(os.environ.get("BAZE_IP_STARTS_PER_DAY", "10"))),
-        model_calls_per_day=max(1, int(os.environ.get("BAZE_MODEL_CALLS_PER_DAY", "800"))),
+        model_calls_per_day=max(1, int(os.environ.get("BAZE_MODEL_CALLS_PER_DAY", "2000"))),
         admin_code=os.environ.get("BAZE_ADMIN_CODE", ""),
     )

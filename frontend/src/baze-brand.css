@@ -462,7 +462,7 @@
 .bz-bar .bz-nav {
   position: relative;
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(6.75rem, auto));
+  grid-template-columns: repeat(3, minmax(7.25rem, auto));
   align-items: center;
   padding: 0.2rem;
   border: 1px solid color-mix(in srgb, var(--foreground) 8%, transparent);
@@ -475,7 +475,7 @@
   top: 0.2rem;
   bottom: 0.2rem;
   left: 0.2rem;
-  width: calc((100% - 0.4rem) / 2);
+  width: calc((100% - 0.4rem) / 3);
   border-radius: 999px;
   background: color-mix(in srgb, var(--card) 82%, transparent);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 8%, transparent);
@@ -490,13 +490,17 @@
   opacity: 1;
   transform: translateX(100%);
 }
+.bz-bar .bz-nav:has(a:nth-of-type(3).is-active) .bz-nav__glide {
+  opacity: 1;
+  transform: translateX(200%);
+}
 .bz-bar .bz-nav a {
   position: relative;
   z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 6.75rem;
+  width: 7.25rem;
   height: 2rem;
   padding: 0;
   border-radius: 999px;
@@ -531,6 +535,11 @@
   .bz-bar .bz-nav {
     grid-area: nav;
     justify-self: center;
+    width: min(100%, 24rem);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .bz-bar .bz-nav a {
+    width: auto;
   }
 }
 .bz-chips {

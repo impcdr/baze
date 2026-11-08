@@ -2,25 +2,35 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, sig
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { NgIcon, provideIcons } from '@ng-icons/core';
-import { lucideArrowLeft, lucideArrowUp, lucideLoaderCircle, lucideMinus, lucidePaperclip, lucideShieldAlert, lucideTrash2, lucideX } from '@ng-icons/lucide';
+import { lucideArrowLeft, lucideArrowUp, lucideEye, lucideEyeOff, lucideLoaderCircle, lucideMinus, lucidePaperclip, lucideShieldAlert, lucideTrash2, lucideX } from '@ng-icons/lucide';
 import { toast } from '@spartan-ng/brain/sonner';
 import { HlmBadgeImports } from '@spartan-ng/helm/badge';
 import { HlmButtonImports } from '@spartan-ng/helm/button';
 import { HlmCheckboxImports } from '@spartan-ng/helm/checkbox';
 import { HlmInputImports } from '@spartan-ng/helm/input';
+import { HlmInputGroupImports } from '@spartan-ng/helm/input-group';
 import { HlmDialogImports } from '@spartan-ng/helm/dialog';
 import { HlmSwitchImports } from '@spartan-ng/helm/switch';
 import { HlmTooltipImports } from '@spartan-ng/helm/tooltip';
 import { catchError, distinctUntilChanged, EMPTY, map, of, Subscription, switchMap, takeWhile, timer } from 'rxjs';
 import { BazeApi } from '../api/baze-api';
-import type { AppManage, AppTurn, ChartEntry } from '../api/models';
+import type { AppManage, AppTurn, ChartEntry, SecretLog } from '../api/models';
 import { BazeAppTile } from '../baze/brand';
 import { BAZE_ICONS } from './icons';
 
+interface RecordRow {
+  id: string;
+  kind: ChartEntry['kind'];
+  summary: string;
+  at: number;
+  count: number;
+  details: string[];
+}
+
 @Component({
   selector: 'bz-manage',
-  imports: [RouterLink, NgIcon, HlmBadgeImports, HlmButtonImports, HlmCheckboxImports, HlmDialogImports, HlmInputImports, HlmSwitchImports, HlmTooltipImports, BazeAppTile],
-  providers: [provideIcons({ ...BAZE_ICONS, lucideArrowLeft, lucideArrowUp, lucideLoaderCircle, lucideMinus, lucidePaperclip, lucideShieldAlert, lucideTrash2, lucideX })],
+  imports: [RouterLink, NgIcon, HlmBadgeImports, HlmButtonImports, HlmCheckboxImports, HlmDialogImports, HlmInputImports, HlmInputGroupImports, HlmSwitchImports, HlmTooltipImports, BazeAppTile],
+  providers: [provideIcons({ ...BAZE_ICONS, lucideArrowLeft, lucideArrowUp, lucideEye, lucideEyeOff, lucideLoaderCircle, lucideMinus, lucidePaperclip, lucideShieldAlert, lucideTrash2, lucideX })],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './manage-page.html',
   host: { class: 'flex min-h-0 flex-1 flex-col overflow-hidden pb-6' },
@@ -34,6 +44,12 @@ export class ManagePage {
   private readonly now = signal(Date.now());
   protected readonly draft = signal('');
   protected readonly files = signal<File[]>([]);
+
+  protected fileKind(where: string): string {
+    if (where === 'specimen') return 'Specimen';
+    if (where === 'record') return 'Record';
+    return 'Upload';
+  }
   protected readonly sending = signal(false);
   protected readonly picked = signal<string[]>([]);
   private appliedSites = '';
@@ -41,9 +57,17 @@ export class ManagePage {
   protected readonly sharing = signal(false);
   protected readonly persisting = signal(false);
   protected readonly persistCode = signal('');
+  protected readonly secretName = signal('');
+  protected readonly secretValue = signal('');
+  protected readonly secretVisible = signal(false);
+  protected readonly addingSecret = signal(false);
+  protected readonly leftName = signal<string | null>(null);
+  protected readonly copied = signal(false);
+  protected readonly sealing = signal(false);
+  protected readonly opened = signal<{ name: string; value: string } | null>(null);
   protected readonly deleteCode = signal('');
   protected readonly running = signal(false);
-  protected readonly chosen = signal<ChartEntry | null>(null);
+  protected readonly chosen = signal<RecordRow | null>(null);
   protected readonly made = signal('');
   private readonly thread = viewChild<ElementRef<HTMLElement>>('thread');
   private asked = false;
@@ -69,6 +93,9 @@ export class ManagePage {
       )
       .subscribe((page) => {
         this.app.set(page);
+        if (page.check && !this.router.url.startsWith('/verify')) {
+          void this.router.navigate(['/verify', page.id], { replaceUrl: true });
+        }
         this.rememberSites(page);
         this.running.set(page.status === 'live');
         this.scroll();
@@ -114,7 +141,31 @@ export class ManagePage {
     this.files.update((current) => current.filter((item) => item !== file));
   }
 
-  protected entryLabel(entry: ChartEntry): string {
+  protected recordRows(): RecordRow[] {
+    const rows: RecordRow[] = [];
+    for (const entry of this.app()?.record ?? []) {
+      const previous = rows.at(-1);
+      if (previous && previous.kind === entry.kind && previous.summary === entry.summary) {
+        previous.count += 1;
+        previous.at = entry.at;
+        const detail = entry.detail?.trim();
+        if (detail && !previous.details.includes(detail)) previous.details.push(detail);
+        continue;
+      }
+      const detail = entry.detail?.trim();
+      rows.push({
+        id: entry.id,
+        kind: entry.kind,
+        summary: entry.summary,
+        at: entry.at,
+        count: 1,
+        details: detail ? [detail] : [],
+      });
+    }
+    return rows;
+  }
+
+  protected entryLabel(entry: RecordRow): string {
     if (this.deployed(entry)) return 'Deployed';
     if (entry.kind === 'decision') return 'Decision';
     if (entry.kind === 'created') return 'Created';
@@ -122,23 +173,33 @@ export class ManagePage {
     return 'Change';
   }
 
-  protected entryTone(entry: ChartEntry): 'success' | 'warning' | 'outline' {
+  protected entryTone(entry: RecordRow): 'success' | 'warning' | 'outline' {
     if (this.deployed(entry)) return 'success';
     if (entry.kind === 'containment') return 'warning';
     return 'outline';
   }
 
-  protected shortRecord(entry: ChartEntry): string {
-    if (this.deployed(entry)) return 'Approved';
+  protected shortRecord(entry: RecordRow): string {
+    if (this.deployed(entry)) return '';
+    if (entry.kind === 'created') return this.app()?.name ?? '';
     let text = entry.summary.replace(/\s+/g, ' ').trim();
-    if (entry.kind === 'created') text = text.replace(/\.?\s*It was created\.?$/i, '').trim();
-    if (text.length <= 72) return text;
-    const cut = text.slice(0, 72);
-    const space = cut.lastIndexOf(' ');
-    return `${(space > 40 ? cut.slice(0, space) : cut).trimEnd()}…`;
+    if (text === 'A call was stopped.' && entry.count > 1) return `${entry.count} calls were stopped.`;
+    if (text.length > 72) {
+      const cut = text.slice(0, 72);
+      const space = cut.lastIndexOf(' ');
+      text = `${(space > 40 ? cut.slice(0, space) : cut).trimEnd()}…`;
+    }
+    return entry.count > 1 ? `${text} ×${entry.count}` : text;
   }
 
-  private deployed(entry: ChartEntry): boolean {
+  protected dialogBody(entry: RecordRow): string {
+    if (entry.details.length > 0) return '';
+    if (this.deployed(entry)) return '';
+    if (entry.kind === 'created') return this.app()?.name ?? '';
+    return entry.summary;
+  }
+
+  private deployed(entry: { summary: string }): boolean {
     return entry.summary.trim().toLowerCase() === 'supervisor approved, app deployed.';
   }
 
@@ -151,7 +212,7 @@ export class ManagePage {
 
   protected toggle(on: boolean): void {
     const page = this.app();
-    if (!page || !page.runnable || this.powering() || on === this.running()) return;
+    if (!page || page.sealed || !page.runnable || this.powering() || on === this.running()) return;
     const previous = this.running();
     this.running.set(on);
     this.powering.set(true);
@@ -188,7 +249,7 @@ export class ManagePage {
         this.powering.set(false);
         this.deleteCode.set('');
         ctx.close();
-        void this.router.navigate(['/apps']);
+        void this.router.navigate([page.check ? '/verify' : '/apps']);
       },
       error: (error: unknown) => {
         this.powering.set(false);
@@ -210,6 +271,95 @@ export class ManagePage {
       error: () => {
         this.sharing.set(false);
         toast('The app was not shared.');
+      },
+    });
+  }
+
+  protected onSecretName(event: Event): void {
+    this.secretName.set((event.target as HTMLInputElement).value);
+    this.leftName.set(null);
+  }
+
+  protected onSecretValue(event: Event): void {
+    this.secretValue.set((event.target as HTMLInputElement).value);
+    this.leftName.set(null);
+  }
+
+  protected toggleSecret(): void {
+    this.secretVisible.update((visible) => !visible);
+  }
+
+  protected startSecret(): void {
+    this.addingSecret.set(true);
+  }
+
+  protected dismissRead(): void {
+    this.opened.set(null);
+    this.copied.set(false);
+  }
+
+  protected clearSecret(): void {
+    this.dismissRead();
+    this.secretName.set('');
+    this.secretValue.set('');
+    this.secretVisible.set(false);
+    this.addingSecret.set(false);
+    this.leftName.set(null);
+  }
+
+  protected copySecret(): void {
+    const value = this.opened()?.value;
+    if (!value) return;
+    void navigator.clipboard.writeText(value).then(
+      () => this.copied.set(true),
+      () => toast('The secret was not copied.'),
+    );
+  }
+
+  protected secretLine(entry: SecretLog): string {
+    if (entry.to === 'agent' && entry.event === 'left') return `You left ${entry.name}.`;
+    if (entry.to === 'agent' && entry.event === 'read') return `The app read ${entry.name}.`;
+    if (entry.to === 'user' && entry.event === 'left') return `The app left ${entry.name}.`;
+    return `You read ${entry.name}.`;
+  }
+
+  protected leaveSecret(event: Event): void {
+    event.preventDefault();
+    const page = this.app();
+    const name = this.secretName().trim();
+    const value = this.secretValue().trim();
+    if (!page || page.box?.id !== 'data' || !page.canPrompt || this.sealing() || !name || !value) return;
+    this.sealing.set(true);
+    this.api.leaveSecret(page.id, name, value).subscribe({
+      next: (fresh) => {
+        this.sealing.set(false);
+        this.secretName.set('');
+        this.secretValue.set('');
+        this.secretVisible.set(false);
+        this.addingSecret.set(false);
+        this.leftName.set(name);
+        this.app.update((current) => (current ? { ...current, secrets: fresh.secrets } : current));
+      },
+      error: (error: unknown) => {
+        this.sealing.set(false);
+        toast(refusal(error, 'The secret was not left.'));
+      },
+    });
+  }
+
+  protected readSecret(secretId: string): void {
+    const page = this.app();
+    if (!page || page.box?.id !== 'data' || !page.canPrompt || this.sealing()) return;
+    this.sealing.set(true);
+    this.api.readSecret(page.id, secretId).subscribe({
+      next: (fresh) => {
+        this.sealing.set(false);
+        this.opened.set({ name: fresh.name, value: fresh.value });
+        this.app.update((current) => (current ? { ...current, secrets: fresh.secrets } : current));
+      },
+      error: (error: unknown) => {
+        this.sealing.set(false);
+        toast(refusal(error, 'That secret is already gone.'));
       },
     });
   }

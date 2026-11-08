@@ -20,7 +20,21 @@ _SERVER = """from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-TYPES = {".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".js": "text/javascript; charset=utf-8"}
+BOX = Path("/opt/box")
+TYPES = {".html": "text/html; charset=utf-8", ".svg": "image/svg+xml", ".js": "text/javascript; charset=utf-8", ".json": "application/json"}
+RECORDS = {"records.json", "data.json", "store.json", "invoices.json", "config.yaml"}
+RECORD_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
+
+
+def record_file(name):
+    if not name or "/" in name or name.startswith("."):
+        return None
+    if name not in RECORDS and Path(name).suffix not in RECORD_SUFFIXES:
+        return None
+    file = (BOX / name).resolve()
+    if BOX not in file.parents or not file.is_file():
+        return None
+    return file
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,10 +45,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, "application/json", body)
             return
         name = "index.html" if path in ("/", "/index.html") else path.lstrip("/")
-        file = (ROOT / name).resolve()
-        if ROOT not in file.parents or not file.is_file():
-            self._send(404, "text/plain; charset=utf-8", b"Not found")
-            return
+        file = record_file(name)
+        if file is None:
+            file = (ROOT / name).resolve()
+            if ROOT not in file.parents or not file.is_file():
+                self._send(404, "text/plain; charset=utf-8", b"Not found")
+                return
         self._send(200, TYPES.get(file.suffix, "application/octet-stream"), file.read_bytes())
 
     def _send(self, status, content_type, body):

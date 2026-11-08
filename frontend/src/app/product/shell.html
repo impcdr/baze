@@ -6,7 +6,8 @@
     </a>
     <nav class="bz-nav" aria-label="Places">
       <span class="bz-nav__glide" aria-hidden="true"></span>
-      <a routerLink="/apps" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: false }" ariaCurrentWhenActive="page">My apps</a>
+      <a routerLink="/apps" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: false }" ariaCurrentWhenActive="page">Apps</a>
+      <a routerLink="/verify" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: false }" ariaCurrentWhenActive="page">Verify</a>
       <a routerLink="/creator" routerLinkActive="is-active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Creator</a>
     </nav>
     @if (account(); as person) {

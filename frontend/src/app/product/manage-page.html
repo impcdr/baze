@@ -1,8 +1,8 @@
 @if (app(); as page) {
   <div class="flex min-h-0 w-full flex-1 flex-col overflow-y-auto lg:overflow-hidden">
-    <a routerLink="/apps" class="text-muted-foreground inline-flex items-center gap-1 py-3 text-sm font-medium">
+    <a [routerLink]="page.check ? '/verify' : '/apps'" class="text-muted-foreground inline-flex items-center gap-1 py-3 text-sm font-medium">
       <ng-icon name="lucideArrowLeft" />
-      My apps
+      {{ page.check ? 'Verify' : 'Apps' }}
     </a>
 
     <header class="flex items-start gap-3 pb-4">
@@ -23,11 +23,11 @@
           <p class="bz-copy text-muted-foreground mt-1">This is a check, not an app.</p>
         }
       </div>
-      @if (page.canPrompt) {
+      @if (page.canPrompt || (page.sealed && !page.check)) {
         <hlm-switch
           class="ms-auto self-center"
           [checked]="running()"
-          [disabled]="!page.runnable || powering() || page.status === 'building' || page.status === 'attention'"
+          [disabled]="page.sealed || !page.runnable || powering() || page.status === 'building' || page.status === 'attention'"
           [aria-label]="running() ? 'Stop ' + page.name : 'Start ' + page.name"
           (checkedChange)="toggle($event)"
         />
@@ -161,7 +161,7 @@
         </ol>
       </div>
 
-      @if (page.canPrompt) {
+      @if (page.canPrompt || page.sealed) {
       <form class="px-4 pt-1 pb-4" (submit)="$event.preventDefault(); send()">
         @if (files().length > 0) {
           <ul class="mb-2 flex flex-wrap gap-2">
@@ -177,12 +177,12 @@
         }
         <div class="flex items-end gap-1">
           <label class="sr-only" for="manage-files">Add files</label>
-          <input #picker id="manage-files" class="sr-only" type="file" multiple [disabled]="!open(page) || held(page)" (change)="onFiles($event)" />
-          <button type="button" class="text-muted-foreground hover:text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Add files" [disabled]="!open(page) || held(page) || files().length >= 4" (click)="picker.click()">
+          <input #picker id="manage-files" class="sr-only" type="file" multiple [disabled]="page.sealed || !open(page) || held(page)" (change)="onFiles($event)" />
+          <button type="button" class="text-muted-foreground hover:text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Add files" [disabled]="page.sealed || !open(page) || held(page) || files().length >= 4" (click)="picker.click()">
             <ng-icon name="lucidePaperclip" class="size-4" />
           </button>
           @if (needsDecision(page)) {
-            <button type="button" class="text-muted-foreground hover:text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send to supervisor" [disabled]="!open(page) || held(page) || !draft().trim()" (click)="sendToSupervisor()">
+            <button type="button" class="text-muted-foreground hover:text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send to supervisor" [disabled]="page.sealed || !open(page) || held(page) || !draft().trim()" (click)="sendToSupervisor()">
               <ng-icon name="lucideShieldAlert" class="size-4" />
             </button>
           }
@@ -194,16 +194,18 @@
               class="placeholder:text-muted-foreground max-h-40 min-h-10 min-w-0 flex-1 resize-none border-0 bg-transparent py-2.5 ps-3.5 pe-1 text-[length:var(--bz-text-meta)] leading-5 outline-none"
               placeholder="Tell me what to change…"
               [value]="draft()"
-              [disabled]="!open(page) || held(page)"
+              [disabled]="page.sealed || !open(page) || held(page)"
               (input)="onDraft($event)"
               (keydown)="onKeydown($event)"
             ></textarea>
-            <button type="submit" class="text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send" [disabled]="!open(page) || held(page) || (!draft().trim() && files().length === 0)">
+            <button type="submit" class="text-foreground grid size-10 shrink-0 place-items-center disabled:opacity-40" aria-label="Send" [disabled]="page.sealed || !open(page) || held(page) || (!draft().trim() && files().length === 0)">
               <ng-icon name="lucideArrowUp" class="size-4" />
             </button>
           </div>
         </div>
-        @if (page.status === 'error' && page.statusError) {
+        @if (page.sealed) {
+          <p class="bz-copy text-muted-foreground mt-2">This demo stays as it is.</p>
+        } @else if (page.status === 'error' && page.statusError) {
           <p class="bz-copy text-muted-foreground mt-2">{{ page.statusError }}</p>
         }
       </form>
@@ -218,8 +220,12 @@
       <section class="bg-card shrink-0 rounded-xl px-4 py-3" aria-label="App Settings">
         <h2 class="font-display text-lg">App Settings</h2>
         <div class="mt-3 flex flex-wrap gap-2">
+          <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="filesDialog">Files</button>
           <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="sitesDialog">Allowed Sites</button>
           <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="shareDialog">Share</button>
+          @if (page.box?.id === 'data' && (page.canPrompt || page.sealed)) {
+            <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="secretsDialog">Secrets</button>
+          }
           @if (page.canPrompt && !page.demo) {
             <button hlmBtn type="button" variant="outline" size="sm" [hlmDialogTriggerFor]="persistDialog">Persist</button>
           }
@@ -279,6 +285,29 @@
             </div>
           </hlm-dialog-content>
         </hlm-dialog>
+        <hlm-dialog #filesDialog>
+          <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+            <div hlmDialogHeader>
+              <h3 hlmDialogTitle>Files</h3>
+              <p hlmDialogDescription>Files given to this app.</p>
+            </div>
+            @if ((page.files ?? []).length === 0) {
+              <p class="bz-copy text-muted-foreground">No files were given.</p>
+            } @else {
+              <ul class="max-h-[min(24rem,60vh)] overflow-y-auto">
+                @for (file of page.files ?? []; track file.where + file.name) {
+                  <li class="py-1.5">
+                    <span class="block break-all text-sm">{{ file.name }}</span>
+                    <span class="bz-copy text-muted-foreground">{{ file.size }} bytes<span> · {{ fileKind(file.where) }}</span></span>
+                  </li>
+                }
+              </ul>
+            }
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+            </div>
+          </hlm-dialog-content>
+        </hlm-dialog>
         <hlm-dialog #sitesDialog>
           <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
             <div hlmDialogHeader>
@@ -297,6 +326,96 @@
                 }
               </ul>
             }
+            <div hlmDialogFooter>
+              <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
+            </div>
+          </hlm-dialog-content>
+        </hlm-dialog>
+        <hlm-dialog #secretsDialog (closed)="clearSecret()">
+          <hlm-dialog-content *hlmDialogPortal="let ctx" class="sm:max-w-md">
+            <div hlmDialogHeader>
+              <h3 hlmDialogTitle>Secrets</h3>
+              <p hlmDialogDescription>Leave one for the app, or read one it left for you. A read deletes it. The log keeps the name.</p>
+            </div>
+            <div class="flex max-h-[min(28rem,60vh)] flex-col gap-5 overflow-y-auto">
+              @if (opened(); as shown) {
+                <div class="bg-muted flex flex-col gap-2 rounded-xl px-4 py-3">
+                  <p class="bz-copy text-muted-foreground">Read once. This is not kept.</p>
+                  <p class="bz-copy font-medium break-all">{{ shown.name }}</p>
+                  <p class="bz-copy break-all select-all">{{ shown.value }}</p>
+                  <div class="mt-1 flex gap-2">
+                    <button hlmBtn type="button" variant="outline" size="sm" (click)="copySecret()">{{ copied() ? 'Copied' : 'Copy' }}</button>
+                    <button hlmBtn type="button" variant="outline" size="sm" (click)="dismissRead()">Done</button>
+                  </div>
+                </div>
+              } @else {
+                @if ((page.secrets?.forYou ?? []).length > 0) {
+                  <div class="flex flex-col gap-1">
+                    <p class="bz-copy text-muted-foreground">For you</p>
+                    <ul>
+                      @for (note of page.secrets?.forYou ?? []; track note.id) {
+                        <li class="flex items-center justify-between gap-3 py-2">
+                          <span class="bz-copy min-w-0 break-all">{{ note.name }}</span>
+                          <button hlmBtn type="button" variant="outline" size="sm" (click)="readSecret(note.id)" [disabled]="page.sealed || sealing()">Read once</button>
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                }
+                @if (addingSecret()) {
+                  <form class="flex flex-col gap-3" (submit)="leaveSecret($event)">
+                    <input hlmInput id="secret-name" name="name" autocomplete="off" placeholder="Name" aria-label="Name" [value]="secretName()" (input)="onSecretName($event)" />
+                    <div hlmInputGroup>
+                      <input
+                        hlmInputGroupInput
+                        id="secret-value"
+                        name="secret"
+                        autocomplete="off"
+                        placeholder="Secret"
+                        aria-label="Secret"
+                        [type]="secretVisible() ? 'text' : 'password'"
+                        [value]="secretValue()"
+                        (input)="onSecretValue($event)"
+                      />
+                      <div hlmInputGroupAddon align="inline-end">
+                        <button hlmInputGroupButton size="icon-xs" [attr.aria-label]="secretVisible() ? 'Hide secret' : 'Show secret'" (click)="toggleSecret()">
+                          <ng-icon [name]="secretVisible() ? 'lucideEyeOff' : 'lucideEye'" />
+                        </button>
+                      </div>
+                    </div>
+                    <button hlmBtn type="submit" size="sm" class="self-start" [disabled]="page.sealed || sealing() || !secretName().trim() || !secretValue().trim()">Leave for the app</button>
+                  </form>
+                } @else {
+                  <button hlmBtn type="button" variant="outline" size="sm" class="self-start" [disabled]="page.sealed" (click)="startSecret()">Add secret</button>
+                }
+                @if (leftName(); as name) {
+                  <p class="bz-copy text-muted-foreground">Left {{ name }} for the app. It can read it once.</p>
+                }
+              }
+              @if ((page.secrets?.forApp ?? []).length > 0) {
+                <div class="flex flex-col gap-1">
+                  <p class="bz-copy text-muted-foreground">Waiting for the app</p>
+                  <ul>
+                    @for (note of page.secrets?.forApp ?? []; track note.id) {
+                      <li class="bz-copy break-all py-1.5">{{ note.name }}</li>
+                    }
+                  </ul>
+                </div>
+              }
+              @if ((page.secrets?.log ?? []).length > 0) {
+                <div class="flex flex-col gap-1 border-t pt-3">
+                  <p class="bz-copy text-muted-foreground">Log</p>
+                  <ul>
+                    @for (entry of page.secrets?.log ?? []; track entry.id) {
+                      <li class="flex items-baseline justify-between gap-3 py-1.5">
+                        <span class="bz-copy min-w-0">{{ secretLine(entry) }}</span>
+                        <span class="bz-copy text-muted-foreground shrink-0">{{ when(entry.at) }}</span>
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+            </div>
             <div hlmDialogFooter>
               <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
             </div>
@@ -321,7 +440,7 @@
                   @if (!person.owner) {
                     <hlm-checkbox
                       [checked]="person.shared"
-                      [disabled]="!page.canPrompt || sharing()"
+                      [disabled]="page.sealed || !page.canPrompt || sharing()"
                       [aria-label]="person.name"
                       (checkedChange)="share(person.email, $event)"
                     />
@@ -348,7 +467,13 @@
                     <h3 hlmDialogTitle>{{ entryLabel(entry) }}</h3>
                     <p hlmDialogDescription>{{ when(entry.at) }}</p>
                   </div>
-                  <p class="bz-copy whitespace-pre-wrap break-words">{{ entry.detail || entry.summary }}</p>
+                  @if (entry.details.length > 0) {
+                    @for (line of entry.details; track line) {
+                      <p class="bz-copy whitespace-pre-wrap break-words">{{ line }}</p>
+                    }
+                  } @else if (dialogBody(entry)) {
+                    <p class="bz-copy whitespace-pre-wrap break-words">{{ dialogBody(entry) }}</p>
+                  }
                 }
                 <div hlmDialogFooter>
                   <button hlmBtn type="button" variant="outline" hlmDialogClose>Close</button>
@@ -356,14 +481,16 @@
               </hlm-dialog-content>
             </hlm-dialog>
             <ol class="flex flex-col gap-1">
-              @for (entry of page.record; track entry.id) {
+              @for (entry of recordRows(); track entry.id) {
                 <li>
                   <button type="button" class="hover:bg-muted w-full rounded-lg px-2 py-2 text-start" [hlmDialogTriggerFor]="recordDialog" (click)="chosen.set(entry)">
                     <span class="flex items-center gap-2">
                       <span hlmBadge [variant]="entryTone(entry)">{{ entryLabel(entry) }}</span>
                       <time class="text-muted-foreground text-xs">{{ when(entry.at) }}</time>
                     </span>
-                    <span class="bz-copy mt-1 block">{{ shortRecord(entry) }}</span>
+                    @if (shortRecord(entry)) {
+                      <span class="bz-copy mt-1 block">{{ shortRecord(entry) }}</span>
+                    }
                   </button>
                 </li>
               }
