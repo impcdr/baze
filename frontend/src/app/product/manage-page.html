@@ -491,6 +491,9 @@
                     @if (shortRecord(entry)) {
                       <span class="bz-copy mt-1 block">{{ shortRecord(entry) }}</span>
                     }
+                    @for (line of entry.details; track line) {
+                      <span class="bz-copy text-muted-foreground mt-1 block break-words">{{ line }}</span>
+                    }
                   </button>
                 </li>
               }

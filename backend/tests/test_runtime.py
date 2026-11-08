@@ -1674,6 +1674,48 @@ def test_a_sealed_demo_is_on_every_shelf_and_cannot_be_changed(settings, tmp_pat
     assert refused.json["description"] == "This demo stays as it is."
 
 
+def test_a_sealed_demo_can_stay_unshared_on_the_shelf(settings, tmp_path):
+    from baze_api.catalog import USER_EMAIL
+    from baze_api.db import users
+
+    client, tuned = _app(settings, tmp_path, FakeDocker(), FakeHermes())
+    owner = users(tuned).find_one({"email": USER_EMAIL})
+    app_id = "f" * 32
+    apps(tuned).insert_one(
+        {
+            "_id": app_id,
+            "ownerId": owner["_id"],
+            "slug": "bench-unshared",
+            "name": "Bench Book",
+            "summary": "Workshop jobs",
+            "status": "live",
+            "sort": 4,
+            "sealed": True,
+            "demo": True,
+            "sharedWith": [],
+            "runtime": {"containerName": f"baze-app-{app_id}", "profile": "data"},
+        }
+    )
+    guest = {"headers": {"Cookie": "baze_user=max.mustermann@example.com"}}
+    mine = client.simulate_get("/api/apps").json
+    card = next(item for item in mine["apps"] if item["id"] == app_id)
+    assert len(card["people"]) == 1
+    theirs = client.simulate_get("/api/apps", **guest).json
+    assert app_id in [item["id"] for item in theirs["apps"]]
+    assert app_id not in [item["id"] for item in theirs["shared"]]
+    page = client.simulate_get(f"/api/apps/{app_id}/manage", **guest)
+    assert page.status_code == 200
+    assert page.json["sharedBy"] is None
+    assert [row["shared"] for row in page.json["shares"] if not row["owner"]] == [False, False, False]
+    refused = client.simulate_post(
+        f"/api/apps/{app_id}/prompt",
+        json={"content": "Mark Eva ready"},
+        **guest,
+    )
+    assert refused.status_code == 403
+    assert refused.json["description"] == "This demo stays as it is."
+
+
 def test_reads_stay_open_when_starts_are_used_up(settings, tmp_path):
     from baze_api.limits import begin_start, release_turn
 
@@ -1991,6 +2033,36 @@ def test_a_data_box_asks_before_a_lookup_and_leaves_records_behind(settings, tmp
     dest = tmp_path / "copied"
     copy_code(source, dest)
     assert not (dest / "invoices.json").exists()
+
+
+def test_a_local_proxy_names_the_visitor_and_a_stranger_header_does_not(settings, tmp_path):
+    client, _tuned = _app(settings, tmp_path, FakeDocker(), FakeHermes(), infer=_reception)
+    proxied = client.simulate_post(
+        "/api/creator/messages",
+        json={"content": "From the proxy"},
+        remote_addr="127.0.0.1",
+        headers={"X-Forwarded-For": "203.0.113.50"},
+    )
+    assert proxied.status_code == 200
+    seen = client.simulate_get("/api/creator", remote_addr="203.0.113.50").json
+    assert [turn["content"] for turn in seen["messages"] if turn["role"] == "user"] == ["From the proxy"]
+    hidden = client.simulate_get(
+        "/api/creator",
+        remote_addr="127.0.0.1",
+        headers={"X-Forwarded-For": "203.0.113.51"},
+    ).json
+    assert all(turn["content"] != "From the proxy" for turn in hidden["messages"])
+    spoofed = client.simulate_post(
+        "/api/creator/messages",
+        json={"content": "Spoofed"},
+        remote_addr="203.0.113.77",
+        headers={"X-Forwarded-For": "198.51.100.8"},
+    )
+    assert spoofed.status_code == 200
+    real = client.simulate_get("/api/creator", remote_addr="203.0.113.77").json
+    assert any(turn["content"] == "Spoofed" for turn in real["messages"])
+    pretended = client.simulate_get("/api/creator", remote_addr="198.51.100.8").json
+    assert all(turn["content"] != "Spoofed" for turn in pretended["messages"])
 
 
 def test_a_quarantine_check_is_pending_on_verify_and_absent_from_apps(settings, tmp_path):

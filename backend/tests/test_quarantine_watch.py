@@ -28,6 +28,89 @@ def test_given_files_lists_each_box(tmp_path):
     assert quarantine[0]["where"] == "specimen"
 
 
+def test_a_suspicious_check_names_the_reason_and_a_clear_check_does_not():
+    from baze_api.product import _public_check
+
+    shown = _public_check(
+        {
+            "_id": "b" * 32,
+            "name": "Payroll Glance",
+            "verdict": "suspicious",
+            "specimen": "hours.txt (74 bytes)",
+            "report": "The item opened the password file.",
+            "reason": "Opened the password file and called 203.0.113.40 on port 443.",
+        }
+    )
+    assert shown["verdict"] == "suspicious"
+    assert shown["reason"] == "Opened the password file and called 203.0.113.40 on port 443."
+    quiet = _public_check(
+        {
+            "_id": "c" * 32,
+            "name": "Pickup Note",
+            "verdict": "clear",
+            "specimen": "note.txt (69 bytes)",
+            "report": "The item did not read a private file and did not contact another computer.",
+        }
+    )
+    assert quiet["verdict"] == "clear"
+    assert quiet["reason"] == ""
+
+
+def test_a_check_record_keeps_its_own_opens_and_drops_another_boxs_calls(settings):
+    from baze_api.db import apps
+
+    from baze_api.boxes import record_check_findings
+
+    app_id = "a" * 32
+    apps(settings).insert_one(
+        {
+            "_id": app_id,
+            "slug": "payroll-record",
+            "chart": {
+                "record": [
+                    {"id": "1", "kind": "created", "summary": "Payroll Glance was created.", "at": 1},
+                    {
+                        "id": "2",
+                        "kind": "containment",
+                        "summary": "A call was stopped.",
+                        "detail": "TCP to 203.0.113.10 port 80.",
+                        "at": 2,
+                    },
+                    {
+                        "id": "3",
+                        "kind": "containment",
+                        "summary": "A call was stopped.",
+                        "detail": "TCP to 203.0.113.40 port 443.",
+                        "at": 3,
+                    },
+                    {
+                        "id": "4",
+                        "kind": "containment",
+                        "summary": "A private file was opened.",
+                        "detail": "/etc/passwd",
+                        "at": 4,
+                    },
+                ]
+            },
+        }
+    )
+    record_check_findings(
+        settings,
+        app_id,
+        ["/etc/shadow", "/etc/gshadow"],
+        ["TCP to 203.0.113.40 port 443."],
+    )
+    record = apps(settings).find_one({"_id": app_id})["chart"]["record"]
+    assert [entry["summary"] for entry in record] == [
+        "Payroll Glance was created.",
+        "A call was stopped.",
+        "A private file was opened.",
+        "A private file was opened.",
+    ]
+    assert record[1]["detail"] == "TCP to 203.0.113.40 port 443."
+    assert [entry["detail"] for entry in record[2:]] == ["/etc/shadow", "/etc/gshadow"]
+
+
 def test_the_watcher_records_secret_opens_and_ignores_ordinary_files(tmp_path):
     library = access_library()
     assert library is not None and library.is_file()

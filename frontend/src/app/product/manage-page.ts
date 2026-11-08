@@ -184,6 +184,7 @@ export class ManagePage {
     if (entry.kind === 'created') return this.app()?.name ?? '';
     let text = entry.summary.replace(/\s+/g, ' ').trim();
     if (text === 'A call was stopped.' && entry.count > 1) return `${entry.count} calls were stopped.`;
+    if (text === 'A private file was opened.' && entry.count > 1) return `${entry.count} private files were opened.`;
     if (text.length > 72) {
       const cut = text.slice(0, 72);
       const space = cut.lastIndexOf(' ');

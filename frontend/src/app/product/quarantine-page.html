@@ -11,7 +11,12 @@
               class="grid grid-cols-1 items-baseline gap-x-6 gap-y-1 py-3 no-underline sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]"
               [routerLink]="['/verify', check.id]"
             >
-              <span class="truncate text-sm font-medium">{{ check.name }}</span>
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-medium">{{ check.name }}</span>
+                @if (check.reason) {
+                  <span class="bz-copy text-muted-foreground block truncate">{{ check.reason }}</span>
+                }
+              </span>
               <span class="bz-copy truncate text-muted-foreground">{{ check.specimen }}</span>
               <span hlmBadge [variant]="verdictTone(check.verdict)">{{ verdictLabel(check.verdict) }}</span>
             </a>

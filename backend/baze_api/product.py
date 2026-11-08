@@ -29,7 +29,7 @@ from baze_api.catalog import (
     live_path,
     preset,
 )
-from baze_api.identity import address_allows, current_email, current_ip
+from baze_api.identity import address_allows, current_email, current_ip, visitor_ip
 from baze_api.chart import ask_chart, public_chart
 from baze_api.db import apps, drafts, messages, users
 from baze_api.hermes import HermesClient, HermesError
@@ -201,9 +201,11 @@ def _load_app(settings: Settings, app_id: str, user: dict, *, owner_only: bool) 
     if document.get("ownerId") == user["_id"]:
         return document
     shared = user["_id"] in (document.get("sharedWith") or [])
-    if shared and owner_only:
-        raise falcon.HTTPForbidden(description="You can use this app. You can't change it.")
-    if shared:
+    if document.get("sealed") or shared:
+        if owner_only:
+            if document.get("sealed"):
+                raise falcon.HTTPForbidden(description="This demo stays as it is.")
+            raise falcon.HTTPForbidden(description="You can use this app. You can't change it.")
         return document
     raise falcon.HTTPNotFound(description="App not found")
 
@@ -232,6 +234,8 @@ def _share_rows(settings: Settings, document: dict, _user: dict) -> list[dict]:
 
 def _shared_by_name(settings: Settings, document: dict, user: dict) -> str | None:
     if document.get("ownerId") == user["_id"]:
+        return None
+    if user["_id"] not in (document.get("sharedWith") or []):
         return None
     owner = users(settings).find_one({"_id": document.get("ownerId")}, {"name": 1}) or {}
     return owner.get("name") or ""
@@ -368,12 +372,16 @@ def _public_check(document: dict) -> dict:
     specimen = document.get("specimen") or ""
     if not specimen and verdict != "pending":
         specimen = "No file was in the box."
+    reason = document.get("reason") or ""
+    if not isinstance(reason, str):
+        reason = ""
     return {
         "id": document["_id"],
         "name": document.get("name") or "Check",
         "specimen": specimen,
         "verdict": verdict,
         "report": document.get("report") or "",
+        "reason": reason.strip(),
     }
 
 
@@ -607,7 +615,7 @@ class AppPrompt:
         visible = content if not attached else content + "\n" + "\n".join(Path(item).name for item in attached)
         if body.get("to") == "supervisor" and not content:
             raise falcon.HTTPBadRequest(description="Write a message")
-        begin_start(self.settings, req.remote_addr or "")
+        begin_start(self.settings, visitor_ip(req.remote_addr, req.get_header("X-Forwarded-For")))
         try:
             if body.get("to") == "supervisor":
                 stamp = now_ms()
@@ -1558,7 +1566,7 @@ class CreatorMake:
         prompt = next((turn["content"] for turn in turns if turn.get("role") == "user"), "")
         if not prompt:
             raise falcon.HTTPBadRequest(description="Tell the reception what to make first")
-        begin_start(self.settings, req.remote_addr or "")
+        begin_start(self.settings, visitor_ip(req.remote_addr, req.get_header("X-Forwarded-For")))
         handed = False
         try:
             reserve_hosted(self.settings)
@@ -1577,7 +1585,13 @@ class CreatorMake:
                 chosen = known_profile(read_json(req).get("profile"))
                 if chosen is None:
                     raise falcon.HTTPBadRequest(description="Choose a box")
-                document = begin_hosted_app(self.settings, user["_id"], prompt, chosen, req.remote_addr or "")
+                document = begin_hosted_app(
+                    self.settings,
+                    user["_id"],
+                    prompt,
+                    chosen,
+                    visitor_ip(req.remote_addr, req.get_header("X-Forwarded-For")),
+                )
             finally:
                 release_hosted_reservation()
             app_id = document["_id"]
@@ -1674,7 +1688,7 @@ class AppBuild:
             )
             if claimed.modified_count and self.services is not None:
                 try:
-                    begin_start(self.settings, req.remote_addr or "")
+                    begin_start(self.settings, visitor_ip(req.remote_addr, req.get_header("X-Forwarded-For")))
                 except TooMany:
                     self._release_build(app_id)
                     raise

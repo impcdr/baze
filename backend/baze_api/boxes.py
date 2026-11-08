@@ -614,6 +614,7 @@ def finish_quarantine(settings, app_id: str, runner, infer, data_dir: str, conta
             denies.append(entry["detail"])
     denies = [line for line in denies if line not in baseline]
     verdict, report = _review(settings, infer, evidence, denies, touched, attempts)
+    record_check_findings(settings, app_id, touched, attempts)
     label = specimen_label(data_dir)
     if messages(settings).find_one({"appId": app_id, "role": "supervisor", "content": report}, {"_id": 1}) is None:
         messages(settings).insert_one(
@@ -635,6 +636,59 @@ def finish_quarantine(settings, app_id: str, runner, infer, data_dir: str, conta
             }
         },
     )
+
+
+def record_check_findings(settings, app_id: str, touched: list[str], attempts: list[str]) -> None:
+    """Write this check's opens and calls onto the record, and drop calls that belong to another box."""
+    own = [line for line in attempts if "port 53" not in line]
+    document = apps(settings).find_one({"_id": app_id}, {"chart.record": 1}) or {}
+    record = [entry for entry in ((document.get("chart") or {}).get("record") or []) if isinstance(entry, dict)]
+    kept = []
+    seen_calls: set[str] = set()
+    seen_paths: set[str] = set()
+    opened = set(touched)
+    for entry in record:
+        summary = entry.get("summary")
+        detail = entry.get("detail")
+        if entry.get("kind") == "containment" and summary == "A call was stopped.":
+            if detail not in own or detail in seen_calls:
+                continue
+            seen_calls.add(detail)
+        elif entry.get("kind") == "containment" and summary == "A private file was opened.":
+            if detail not in opened or detail in seen_paths:
+                continue
+            seen_paths.add(detail)
+        kept.append(entry)
+    stamp = now_ms()
+    for detail in own:
+        if detail in seen_calls:
+            continue
+        kept.append(
+            {
+                "id": new_id(),
+                "kind": "containment",
+                "summary": "A call was stopped.",
+                "detail": detail,
+                "at": stamp,
+            }
+        )
+        stamp += 1
+        seen_calls.add(detail)
+    for path in touched:
+        if not path or path in seen_paths:
+            continue
+        kept.append(
+            {
+                "id": new_id(),
+                "kind": "containment",
+                "summary": "A private file was opened.",
+                "detail": path,
+                "at": stamp,
+            }
+        )
+        stamp += 1
+        seen_paths.add(path)
+    apps(settings).update_one({"_id": app_id}, {"$set": {"chart.record": kept}})
 
 
 def _stopped_calls(settings, runner, container_name: str) -> list[str]:

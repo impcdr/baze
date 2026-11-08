@@ -208,6 +208,7 @@ export interface ShelfCheck {
   specimen: string;
   verdict: 'clear' | 'suspicious' | 'pending';
   report: string;
+  reason: string;
 }
 
 export interface ShelfPayload {

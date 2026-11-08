@@ -1,38 +1,45 @@
-@if (home(); as home) {
-  <section class="bg-card flex flex-col gap-5 rounded-xl px-6 py-8 sm:px-10" data-testid="home-hero">
-    <p class="text-muted-foreground text-base">{{ home.greeting }}</p>
-    <h1 class="font-display text-4xl tracking-tight">{{ home.headline }}</h1>
-    <form class="bg-background flex flex-wrap items-center gap-3 rounded-xl border-2 p-2 ps-5" (submit)="$event.preventDefault(); make()">
-      <label class="sr-only" for="home-prompt">Describe your app</label>
-      <input
-        id="home-prompt"
-        name="prompt"
-        class="min-w-0 flex-1 bg-transparent py-3 text-lg outline-none"
-        [value]="prompt()"
-        (input)="type($any($event.target).value)"
-      />
-      <button hlmBtn type="submit" size="lg" [disabled]="sending()">
-        Make it
+<section class="mx-auto flex w-full max-w-5xl flex-col gap-10 py-10" data-testid="home-hero">
+  <div class="flex max-w-2xl flex-col items-start gap-4">
+    <h1 class="font-display text-4xl tracking-tight">Say what the app should do.</h1>
+    <p class="max-w-prose text-muted-foreground">
+      baze makes it from that description, keeps it in its own box, and puts it on your shelf. Open the ones already here, or describe one of your own.
+    </p>
+    <div class="flex flex-wrap items-center gap-3">
+      <a hlmBtn routerLink="/apps" size="lg">
+        See the demo
         <ng-icon name="lucideArrowRight" />
-      </button>
-    </form>
-    <div class="flex flex-wrap items-center gap-2">
-      <span class="text-muted-foreground me-1 text-sm">{{ home.suggestionsLabel }}</span>
-      @for (idea of home.suggestions; track idea.id) {
-        <button hlmBtn type="button" variant="outline" size="sm" (click)="useSuggestion(idea.prompt)">{{ idea.label }}</button>
-      }
+      </a>
+      <a hlmBtn routerLink="/creator" size="lg" variant="outline">Describe an app</a>
     </div>
-  </section>
+  </div>
 
-  <section class="flex flex-col gap-4" data-testid="home-shelf">
-    <div class="flex items-baseline justify-between gap-3">
-      <h2 class="font-display text-2xl">{{ home.shelfTitle }}</h2>
-      <a routerLink="/apps" class="text-sm font-bold">{{ home.seeAllLabel }}</a>
-    </div>
-    <div class="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-      @for (app of home.featured; track app.id) {
-        <bz-app-card [app]="app" (removed)="reload()" />
-      }
-    </div>
-  </section>
-}
+  <div class="flex flex-col gap-4">
+    <h2 class="font-display text-2xl tracking-tight">What you can ask for</h2>
+    <ul class="grid gap-4 md:grid-cols-3">
+      <li class="bg-card flex flex-col gap-3 rounded-xl p-5">
+        <span class="bg-secondary text-primary grid size-10 place-items-center rounded-xl" aria-hidden="true">
+          <ng-icon name="lucideGlobe" />
+        </span>
+        <h3 class="font-display text-lg">A page someone can open</h3>
+        <p class="bz-copy">Reads the web, keeps none of your data.</p>
+        <p class="bz-copy text-muted-foreground">A tide, a price, a public note. The link is the whole app. Your records stay out of it.</p>
+      </li>
+      <li class="bg-card flex flex-col gap-3 rounded-xl p-5">
+        <span class="grid size-10 place-items-center rounded-xl bg-success/15 text-success-foreground" aria-hidden="true">
+          <ng-icon name="lucideLockKeyhole" />
+        </span>
+        <h3 class="font-display text-lg">A place for your records</h3>
+        <p class="bz-copy">Holds your data, talks only to what you approve.</p>
+        <p class="bz-copy text-muted-foreground">Invoices, a customer list, a note you want kept. A secret is left in App Settings. The app can read it once.</p>
+      </li>
+      <li class="bg-card flex flex-col gap-3 rounded-xl p-5">
+        <span class="grid size-10 place-items-center rounded-xl bg-warning/15 text-warning-foreground" aria-hidden="true">
+          <ng-icon name="lucideShieldCheck" />
+        </span>
+        <h3 class="font-display text-lg">A check before you trust it</h3>
+        <p class="bz-copy">Runs untrusted things sealed off, then reports back.</p>
+        <p class="bz-copy text-muted-foreground">Hand it a file. The result waits on Verify, and it never sits with your apps.</p>
+      </li>
+    </ul>
+  </div>
+</section>
